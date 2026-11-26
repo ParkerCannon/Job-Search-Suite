@@ -2,6 +2,9 @@
   "name": "job-search-suite",
   "version": "0.1.0",
   "private": true,
+  "description": "Local-first resume, ATS, and job title workspace",
+  "author": "Job Search Suite",
+  "main": "electron/main.js",
   "engines": {
     "node": ">=18"
   },
@@ -11,7 +14,41 @@
     "build": "node --no-warnings ./node_modules/next/dist/bin/next build",
     "build:static": "node ./node_modules/vite/bin/vite.js build --config vite.static.config.ts",
     "start": "node --no-warnings ./node_modules/next/dist/bin/next start",
+    "electron": "electron electron/main.js",
+    "electron:dir": "npm run build:static && electron-builder --dir",
+    "electron:build": "npm run build:static && electron-builder",
     "typecheck": "tsc --noEmit"
+  },
+  "build": {
+    "appId": "com.local.jobsearchsuite",
+    "productName": "Job Search Suite",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "electron/main.js",
+      "dist-portable/index.html",
+      "package.json",
+      "!node_modules/**"
+    ],
+    "win": {
+      "target": ["nsis"],
+      "artifactName": "Job-Search-Suite-Setup-${version}.${ext}",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": ["dmg"],
+      "artifactName": "Job-Search-Suite-${version}.${ext}"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "artifactName": "Job-Search-Suite-${version}.${ext}"
+    },
+    "publish": null
   },
   "dependencies": {
     "jspdf": "^4.2.1",
@@ -30,6 +67,8 @@
     "@types/sql.js": "^1.16.1",
     "@vitejs/plugin-react": "^4.3.0",
     "autoprefixer": "^10.4.20",
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.0",

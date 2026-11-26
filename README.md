@@ -4,14 +4,15 @@ A local-first web app that parses your resume and LinkedIn profile into one stru
 
 There is no job-site HTML scraping and no arbitrary URL fetching. Job-title discovery uses only an allowlist of public APIs/feeds and the descriptions you paste in stay local.
 
+You can run it three ways: a Node server with live public feeds, a **single HTML file** that opens straight from disk with no Node installed, or a **desktop app** with no server or ports.
+
 ## Requirements
 
-- Node.js 18 or newer
-- npm (included with Node.js)
+- **Server build:** Node.js 18 or newer and npm (included with Node). SQLite runs through `sql.js` (WebAssembly), so there is no native database module to compile and older/32-bit Node installations are supported.
+- **Single-file browser build:** any modern browser. Node is needed once to generate the file, not to use it.
+- **Desktop app:** Windows 10, macOS, or Linux. The packaged app includes its own runtime; no Node installation is needed.
 
-SQLite runs through `sql.js` (WebAssembly), so there is no native database module to compile and older/32-bit Node installations are supported.
-
-> **This is not a standalone HTML app.** Opening `Launch Job Search Suite.html` directly does not render the GUI. The HTML launcher only checks for a local server and redirects to it. The app needs a running Node.js server, and the server dependencies are not included in Git.
+> The root `Launch Job Search Suite.html` is only a shortcut that checks for the server and redirects to it — opening it does not render the GUI. The self-contained app is `dist-portable/index.html`, produced by `npm run build:static` (or included in the desktop package).
 
 ## Run it
 
@@ -40,6 +41,36 @@ npm run build
 npm start
 ```
 
+## Run without Node
+
+### Single-file browser app
+
+Build it once on any machine with Node 18+:
+
+```bash
+npm install
+npm run build:static
+```
+
+Then double-click `dist-portable/index.html` (or copy that one file anywhere and open it in a modern browser). No server, ports, or installed dependencies are needed at runtime. The whole UI and its libraries are inlined into that one file.
+
+This build is deliberately offline: public job feeds and live suggestions are disabled, AI starts off, and any API key you enter is kept in memory for the current session only. The **Job titles** tab rebuilds suggestions from job descriptions you saved in the app plus your working profile. Data lives in this browser's `localStorage`; use **Settings → Local workspace backup** to export or restore a private JSON file, and **Delete local data** to clear it. Backups never contain API keys.
+
+### Desktop app
+
+The desktop shell loads `dist-portable/index.html` directly — there is no local server and no port to manage. External links open in your system browser.
+
+```bash
+npm install
+npm run electron          # run the app from this checkout
+npm run electron:dir      # build an unpacked app in dist-electron/
+npm run electron:build    # build an installer in dist-electron/
+```
+
+`npm run electron` expects `dist-portable/index.html` to exist; run `npm run build:static` first (the `electron:dir` and `electron:build` scripts do that for you). If the build is missing, the app shows an error dialog with the exact command to run instead of closing silently. The packaged app contains only the Electron shell and the static build — no `node_modules`, no source files, and no `data/` directory.
+
+Installers: `Job-Search-Suite-Setup-<version>.exe` (Windows), `.dmg` (macOS), and `.AppImage` (Linux). Windows builds are unsigned, so the first run may show a SmartScreen warning. On macOS, right-click → *Open* the first time if Gatekeeper asks.
+
 ## Troubleshooting
 
 - **`npm` is not recognized:** Node.js is either not installed or not on PATH. Install Node.js 18 or newer from https://nodejs.org/ and reopen the terminal.
@@ -49,7 +80,10 @@ npm start
 - **`Cannot find module './611.js'` or another stale chunk error:** a dev server is still running while `.next` was rebuilt. Run `Launch Job Search Suite.cmd reset`. On macOS/Linux, stop the server, delete `.next`, and run `npm run dev` again.
 - **Stale chunks after `npm run build`:** stop the dev server before building. Do not run `npm run build` and `npm run dev` in the same folder at the same time; both write to `.next`.
 - **The workspace is empty after cloning:** expected. `data/` is git-ignored to keep resumes, jobs, and API keys private, so each clone starts fresh.
-- **Static hosting/GitHub Pages does not work with the server build:** expected. API routes require a Node.js process. Use `npm run dev` or `npm start`.
+- **Static hosting/GitHub Pages does not work with the server build:** expected. API routes require a Node.js process. Use `npm run dev` or `npm start`, or publish `dist-portable/index.html` as a plain static file.
+- **The desktop app says the local build is missing:** run `npm run build:static`, then start the app again. `npm run electron:dir` and `npm run electron:build` regenerate it automatically.
+- **The browser/desktop build shows no live job titles:** expected. Save a job description, then click *Rebuild suggestions* in the Job titles tab.
+- **Local data disappeared after clearing browser storage:** the browser builds keep data in `localStorage`. Export a JSON backup in Settings before clearing browsing data; the server build uses `data/` instead.
 
 ## Using it
 
@@ -58,7 +92,7 @@ npm start
    - To get the JSON: LinkedIn → *Me* → *Settings & Privacy* → *Data Privacy* → *Get a copy of your data* → request the **JSON** format → download and unzip → upload the profile JSON file. The JSON export parses far more reliably than the PDF.
 3. **Job descriptions tab**: paste a full posting. Analysis runs automatically as you type — no save required. Your resume stays open on the left; keyword gaps and prioritized recommendations appear on the right. Switch the resume dropdown between your original resume, working profile, and LinkedIn profile. Use *Save description* to keep a posting for later, and *Full report* for the detailed ATS breakdown.
 4. **ATS check tab** (optional): a fuller scored report for a saved description, with history over time.
-5. **Job titles tab**: click *Refresh titles* to read current public listings and see recommended title groups. Configure which sources to use in Settings.
+5. **Job titles tab**: click *Refresh titles* to read current public listings and see recommended title groups. Configure which sources to use in Settings. In the single-file and desktop builds, click *Rebuild suggestions* instead; suggestions come only from descriptions you saved locally.
 
 ## Discover job titles
 
@@ -121,7 +155,9 @@ When configured, the app adds a short tailored assessment after computing the de
 
 ## Data and privacy
 
-Everything is stored locally in `data/job-search-suite.db` (SQLite via the `sql.js` WebAssembly build) — no account, no cloud sync. The `data/` directory is git-ignored. API keys are stored in the same local database. Job-title discovery never sends your name, email, phone, or full resume text to a job source; keyless feeds receive no profile data at all.
+The server build stores everything locally in `data/job-search-suite.db` (SQLite via the `sql.js` WebAssembly build) — no account, no cloud sync. The `data/` directory is git-ignored. API keys are stored in the same local database.
+
+The single-file and desktop builds keep profiles, jobs, ATS history, and settings in `localStorage` instead. Settings offers JSON export/restore for those builds; API keys are session-only and are excluded from backups. Job-title discovery never sends your name, email, phone, or full resume text to a job source; keyless feeds receive no profile data at all, and the browser/desktop builds contact no job source at all.
 
 ## Project layout
 
@@ -129,13 +165,19 @@ Everything is stored locally in `data/job-search-suite.db` (SQLite via the `sql.
 app/api/                        Route handlers (parse, profile, jobs, ATS, titles, settings)
 app/page.tsx                    App entry
 components/                     UI (overview, profile workspace, jobs, title discovery, ATS results, settings)
+electron/main.js                Electron desktop shell (loads the local static build)
 lib/ats/                        Keyword extraction and scoring engine
 lib/jobs/                       Public feed adapters and source metadata
 lib/parse/                      Resume, LinkedIn export, and PDF/DOCX text extraction
+lib/store/                      Shared store contract, server API store, and local browser store
 lib/titles/                     Resume signal extraction, ranking, and cache service
 lib/db.ts                       SQLite storage via sql.js (WASM)
 lib/types.ts                    Shared profile and result types
 scripts/launch.js               Cross-platform launcher logic and port fallback
+static/                         Vite entry for the single-file build
+vite.static.config.ts           Single-file build configuration
+dist-portable/index.html        Generated offline app (git-ignored)
+dist-electron/                  Generated desktop packages (git-ignored)
 Launch Job Search Suite.cmd     Windows launcher wrapper
 Launch Job Search Suite.command macOS launcher wrapper
 Launch Job Search Suite.sh      Linux launcher wrapper
@@ -148,6 +190,6 @@ package.json                    Scripts and Node engine requirement
 
 Add your LinkedIn and Indeed profile URLs in **Settings → Profile shortcuts**. The **Overview** tab then shows direct links that open each profile in a new tab. If no LinkedIn URL is set, the app uses one found in an imported LinkedIn profile when available.
 
-## Planned next phase
+## Possible next steps
 
 - **Resume assistant:** add accept/edit/reject diff cards from ATS recommendations, revision history, and before/after ATS score deltas. DOCX export is not implemented; PDF export is available now.
