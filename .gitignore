@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Next.js / build output
+.next/
+out/
+build/
+dist/
+
+# Local-first data (private resumes, jobs, and settings)
+data/
+*.db*
+*.sqlite*
+
+# Environment and secrets
+.env*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Tooling caches
+*.tsbuildinfo
+.eslintcache
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db

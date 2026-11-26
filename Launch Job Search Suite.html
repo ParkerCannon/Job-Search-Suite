@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Job Search Suite</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #0b1120;
+        color: #e2e8f0;
+        font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      main {
+        width: min(90vw, 460px);
+        padding: 32px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.03);
+        text-align: center;
+      }
+      h1 { margin: 0 0 8px; font-size: 20px; }
+      a { color: #7dd3fc; }
+      code {
+        padding: 2px 6px;
+        border-radius: 5px;
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .note { margin-top: 20px; font-size: 13px; color: #94a3b8; }
+      .error { color: #fca5a5; }
+      .commands {
+        margin: 16px auto;
+        padding: 14px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.04);
+        text-align: left;
+      }
+      .commands code { display: block; margin: 4px 0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Job Search Suite</h1>
+      <p id="status">Checking for the local server…</p>
+      <p><a id="open-link" href="http://localhost:3000">Open the app manually</a></p>
+
+      <div id="details" hidden>
+        <p class="error">The local server is not running.</p>
+        <p>In the project folder, run:</p>
+        <div class="commands">
+          <code>npm install</code>
+          <code>npm run dev</code>
+        </div>
+        <p class="note">
+          Node.js 22 or newer is required. After the server starts, reopen this file or use the link above.
+          If the terminal shows a different port, open that URL instead.
+        </p>
+      </div>
+
+      <noscript>
+        <p class="note">
+          JavaScript is disabled. Start the server with <code>npm run dev</code>, then open
+          <a href="http://localhost:3000">http://localhost:3000</a>.
+        </p>
+      </noscript>
+    </main>
+
+    <script>
+      (function () {
+        var url = "http://localhost:3000";
+        var status = document.getElementById("status");
+        var details = document.getElementById("details");
+
+        function showOffline() {
+          status.textContent = "The local server is not running.";
+          details.hidden = false;
+        }
+
+        if (!window.fetch) {
+          showOffline();
+          return;
+        }
+
+        var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+        var timer = setTimeout(function () {
+          if (controller) controller.abort();
+        }, 2000);
+
+        fetch(url, {
+          mode: "no-cors",
+          cache: "no-store",
+          signal: controller ? controller.signal : undefined
+        })
+          .then(function () {
+            clearTimeout(timer);
+            status.textContent = "Server found. Opening your workspace…";
+            window.location.replace(url);
+          })
+          .catch(function () {
+            clearTimeout(timer);
+            showOffline();
+          });
+      })();
+    </script>
+  </body>
+</html>
