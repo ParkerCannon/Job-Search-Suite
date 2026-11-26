@@ -11,11 +11,11 @@ export async function POST(request: Request) {
     const body = (await request.json()) as { jobId?: string; source?: ProfileSource; rawText?: string };
     if (!body.jobId) return NextResponse.json({ error: "A job description is required." }, { status: 400 });
 
-    const job = getJob(body.jobId);
+    const job = await getJob(body.jobId);
     if (!job) return NextResponse.json({ error: "Job description not found." }, { status: 404 });
 
     const source = body.source ?? "active";
-    const stored = getProfile(source);
+    const stored = await getProfile(source);
     if (!stored || !stored.profile.name && !stored.profile.summary && !stored.profile.experience.length) {
       return NextResponse.json({ error: `No ${source} profile data found. Import a resume or LinkedIn profile first.` }, { status: 400 });
     }
@@ -29,9 +29,9 @@ export async function POST(request: Request) {
       profile: stored.profile,
       source,
       rawText,
-      settings: getSettings(),
+      settings: await getSettings(),
     });
-    const record = saveAnalysis(job.id, job.title, result);
+    const record = await saveAnalysis(job.id, job.title, result);
     return NextResponse.json({ result, record });
   } catch (error) {
     return NextResponse.json(

@@ -16,14 +16,14 @@ export async function POST(request: Request) {
     }
 
     const source = body.source ?? "active";
-    const stored = getProfile(source);
+    const stored = await getProfile(source);
     if (!stored) {
       return NextResponse.json({ error: "Import a resume or profile first." }, { status: 400 });
     }
 
     const profileText =
       source === "resume" && stored.rawText ? stored.rawText : profileToText(stored.profile);
-    const settings = getSettings();
+    const settings = await getSettings();
 
     const result = await analyzeResume({
       job: { title: "Pasted job description", rawText: body.rawText.trim() },

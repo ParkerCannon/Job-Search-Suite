@@ -21,8 +21,8 @@ export async function POST(request: Request) {
     }
 
     const profile = parseLinkedInText(rawText);
-    const record = saveProfile("linkedin", profile, rawText, filename);
-    if (!getProfile("active")) saveProfile("active", profile, rawText, filename);
+    const record = await saveProfile("linkedin", profile, rawText, filename);
+    if (!(await getProfile("active"))) await saveProfile("active", profile, rawText, filename);
 
     return NextResponse.json({ profile, rawText, filename, updatedAt: record.updatedAt });
   } catch (error) {

@@ -5,10 +5,10 @@ import { getTitlesPayload } from "@/lib/titles/service";
 export const runtime = "nodejs";
 
 export async function GET() {
-  return NextResponse.json(getTitlesPayload());
+  return NextResponse.json(await getTitlesPayload());
 }
 
 export async function DELETE() {
-  clearScrapedJobs();
-  return NextResponse.json({ ok: true, data: getTitlesPayload() });
+  await clearScrapedJobs();
+  return NextResponse.json({ ok: true, data: await getTitlesPayload() });
 }

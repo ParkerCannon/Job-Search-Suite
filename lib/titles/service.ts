@@ -10,7 +10,7 @@ import {
 import { fetchListingsFromSources } from "@/lib/jobs/sources";
 import { buildSourceInfos, isSourceConfigured } from "@/lib/jobs/sourceInfo";
 import { emptyProfile, flattenSkillGroups } from "@/lib/types";
-import type { AppSettings, TitleRefreshStatus, TitlesPayload } from "@/lib/types";
+import type { AppSettings, JobListing, TitleRefreshStatus, TitlesPayload } from "@/lib/types";
 import { buildRecommendations, dedupeListings, scoreListings } from "./rank";
 import { buildProfileSignals, type ProfileSignals } from "./signals";
 
@@ -18,12 +18,12 @@ const CACHE_MS = 24 * 60 * 60 * 1000;
 
 const globalForTitles = globalThis as unknown as { __jssTitleRefresh?: Promise<TitlesPayload> };
 
-function currentProfile(settings: AppSettings) {
-  return getProfile("active") ?? getProfile("resume") ?? getProfile("linkedin");
+async function currentProfile(settings: AppSettings) {
+  return (await getProfile("active")) ?? (await getProfile("resume")) ?? (await getProfile("linkedin"));
 }
 
-function profileForDiscovery(settings: AppSettings) {
-  const stored = currentProfile(settings);
+async function profileForDiscovery(settings: AppSettings) {
+  const stored = await currentProfile(settings);
   return stored?.profile ?? null;
 }
 
@@ -48,15 +48,15 @@ function createFingerprint(signals: ProfileSignals, settings: AppSettings): stri
   return createHash("sha256").update(source).digest("hex").slice(0, 16);
 }
 
-function enrichStatus(
+async function enrichStatus(
   stored: TitleRefreshStatus,
   settings: AppSettings,
   fingerprint: string,
   listingCount: number,
-): TitleRefreshStatus {
+): Promise<TitleRefreshStatus> {
   const last = stored.lastRefreshedAt ? new Date(stored.lastRefreshedAt).getTime() : 0;
   const nextRefreshAt = last ? new Date(last + CACHE_MS).toISOString() : null;
-  const hasProfile = Boolean(profileForDiscovery(settings));
+  const hasProfile = Boolean(await profileForDiscovery(settings));
   let stale = true;
   let staleReason = "No job titles have been discovered yet.";
 
@@ -75,35 +75,35 @@ function enrichStatus(
   return { ...stored, nextRefreshAt, stale, staleReason };
 }
 
-function buildPayload(
-  listings: ReturnType<typeof listScrapedJobs>,
+async function buildPayload(
+  listings: JobListing[],
   settings: AppSettings,
   stored: TitleRefreshStatus,
   fingerprint: string,
-): TitlesPayload {
+): Promise<TitlesPayload> {
   return {
     generatedAt: new Date().toISOString(),
     recommendations: buildRecommendations(listings),
     listings,
     totalListings: listings.length,
     sources: buildSourceInfos(settings.jobDiscovery),
-    status: enrichStatus(stored, settings, fingerprint, listings.length),
+    status: await enrichStatus(stored, settings, fingerprint, listings.length),
   };
 }
 
-export function getTitlesPayload(): TitlesPayload {
-  const settings = getSettings();
-  const profile = profileForDiscovery(settings);
+export async function getTitlesPayload(): Promise<TitlesPayload> {
+  const settings = await getSettings();
+  const profile = await profileForDiscovery(settings);
   const signals = buildProfileSignals(profile ?? emptyProfile(), settings.targetRole);
   const fingerprint = createFingerprint(signals, settings);
-  const stored = getTitleRefreshState();
-  return buildPayload(listScrapedJobs(), settings, stored, fingerprint);
+  const stored = await getTitleRefreshState();
+  return buildPayload(await listScrapedJobs(), settings, stored, fingerprint);
 }
 
 async function runRefresh(): Promise<TitlesPayload> {
-  const settings = getSettings();
-  const profile = profileForDiscovery(settings);
-  const previous = getTitleRefreshState();
+  const settings = await getSettings();
+  const profile = await profileForDiscovery(settings);
+  const previous = await getTitleRefreshState();
   const emptySignals = buildProfileSignals(emptyProfile(), settings.targetRole);
 
   if (!profile || !profile.name && !profile.experience.length && !flattenSkillGroups(profile.skills).length) {
@@ -115,8 +115,8 @@ async function runRefresh(): Promise<TitlesPayload> {
       message: "No working profile is available.",
       sourceStatuses: [],
     };
-    saveTitleRefreshState(state);
-    return buildPayload(listScrapedJobs(), settings, state, createFingerprint(emptySignals, settings));
+    await saveTitleRefreshState(state);
+    return buildPayload(await listScrapedJobs(), settings, state, createFingerprint(emptySignals, settings));
   }
 
   const signals = buildProfileSignals(profile, settings.targetRole);
@@ -130,8 +130,8 @@ async function runRefresh(): Promise<TitlesPayload> {
       message: "Add a headline, experience, or skills to your working profile.",
       sourceStatuses: [],
     };
-    saveTitleRefreshState(state);
-    return buildPayload(listScrapedJobs(), settings, state, fingerprint);
+    await saveTitleRefreshState(state);
+    return buildPayload(await listScrapedJobs(), settings, state, fingerprint);
   }
 
   const keywords = signals.terms.slice(0, 12).map((term) => term.term);
@@ -149,8 +149,8 @@ async function runRefresh(): Promise<TitlesPayload> {
       message: "Enable a source in Settings. Key-based sources need an API key first.",
       sourceStatuses: [],
     };
-    saveTitleRefreshState(state);
-    return buildPayload(listScrapedJobs(), settings, state, fingerprint);
+    await saveTitleRefreshState(state);
+    return buildPayload(await listScrapedJobs(), settings, state, fingerprint);
   }
 
   const fetched = await fetchListingsFromSources(settings.jobDiscovery, keywords);
@@ -158,9 +158,9 @@ async function runRefresh(): Promise<TitlesPayload> {
   const succeeded = attempted.filter((status) => status.ok);
   const allFailed = succeeded.length === 0;
   const scored = dedupeListings(scoreListings(fetched.listings, signals, settings.jobDiscovery));
-  const listings = allFailed ? listScrapedJobs() : scored;
+  const listings = allFailed ? await listScrapedJobs() : scored;
 
-  if (!allFailed) replaceScrapedJobs(scored);
+  if (!allFailed) await replaceScrapedJobs(scored);
 
   const attemptedIds = new Set(attempted.map((status) => status.source));
   const partial = succeeded.length > 0 && attempted.some((status) => !status.ok);
@@ -179,7 +179,7 @@ async function runRefresh(): Promise<TitlesPayload> {
     profileFingerprint: allFailed ? previous.profileFingerprint : fingerprint,
     sourceStatuses: fetched.statuses.filter((status) => attemptedIds.has(status.source) || status.ok),
   };
-  saveTitleRefreshState(state);
+  await saveTitleRefreshState(state);
 
   return buildPayload(listings, settings, state, fingerprint);
 }

@@ -5,7 +5,7 @@ import { emptyProfile, normalizeProfile, type Profile, type ProfileSource } from
 export const runtime = "nodejs";
 
 export async function GET() {
-  return NextResponse.json(getAllProfiles());
+  return NextResponse.json(await getAllProfiles());
 }
 
 export async function PUT(request: Request) {
@@ -16,9 +16,9 @@ export async function PUT(request: Request) {
     };
 
     if (body.resetFrom && body.resetFrom !== "active") {
-      const source = getProfile(body.resetFrom);
+      const source = await getProfile(body.resetFrom);
       if (!source) return NextResponse.json({ error: `No ${body.resetFrom} data imported yet.` }, { status: 404 });
-      const record = saveProfile("active", source.profile, source.rawText, source.filename);
+      const record = await saveProfile("active", source.profile, source.rawText, source.filename);
       return NextResponse.json({ profile: record.profile });
     }
 
@@ -26,7 +26,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "A profile is required." }, { status: 400 });
     }
 
-    const record = saveProfile("active", normalizeProfile(body.profile), "", "Edited in app");
+    const record = await saveProfile("active", normalizeProfile(body.profile), "", "Edited in app");
     return NextResponse.json({ profile: record.profile });
   } catch {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
@@ -34,6 +34,6 @@ export async function PUT(request: Request) {
 }
 
 export async function DELETE() {
-  saveProfile("active", emptyProfile(), "", "");
+  await saveProfile("active", emptyProfile(), "", "");
   return NextResponse.json({ ok: true });
 }

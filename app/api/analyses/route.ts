@@ -5,10 +5,10 @@ export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   const jobId = new URL(request.url).searchParams.get("jobId") ?? undefined;
-  return NextResponse.json({ analyses: listAnalyses(jobId) });
+  return NextResponse.json({ analyses: await listAnalyses(jobId) });
 }
 
 export async function DELETE() {
-  clearAnalyses();
+  await clearAnalyses();
   return NextResponse.json({ ok: true });
 }

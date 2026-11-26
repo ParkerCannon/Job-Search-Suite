@@ -22,8 +22,8 @@ export async function POST(request: Request) {
     }
 
     const profile = parseResumeText(rawText);
-    const record = saveProfile("resume", profile, rawText, filename);
-    if (!getProfile("active")) saveProfile("active", profile, rawText, filename);
+    const record = await saveProfile("resume", profile, rawText, filename);
+    if (!(await getProfile("active"))) await saveProfile("active", profile, rawText, filename);
 
     return NextResponse.json({ profile, rawText, filename, updatedAt: record.updatedAt });
   } catch (error) {

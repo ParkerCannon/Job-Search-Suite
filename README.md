@@ -6,8 +6,10 @@ There is no job-site HTML scraping and no arbitrary URL fetching. Job-title disc
 
 ## Requirements
 
-- Node.js 22 or newer (uses the built-in `node:sqlite` module)
+- Node.js 18 or newer
 - npm (included with Node.js)
+
+SQLite runs through `sql.js` (WebAssembly), so there is no native database module to compile and older/32-bit Node installations are supported.
 
 > **This is not a standalone HTML app.** Opening `Launch Job Search Suite.html` directly does not render the GUI. The HTML launcher only checks for a local server and redirects to it. The app needs a running Node.js server, and the server dependencies are not included in Git.
 
@@ -20,15 +22,16 @@ npm install
 npm run dev
 ```
 
-Then open the URL printed in the terminal, usually http://localhost:3000. The first run creates `data/job-search-suite.db` locally.
+Then open the URL printed in the terminal, usually http://localhost:3000. If that port is busy, the launcher tries 3001 through 3010 and prints the URL it selected. The first run creates `data/job-search-suite.db` locally.
 
 ### Desktop shortcut
 
-- **`Launch Job Search Suite.cmd`** (Windows, recommended) — double-click to check Node.js/npm, detect whether port 3000 is already in use, install dependencies if needed, clear stale build cache, start a fresh dev server, and open the browser. Run it with `check` to validate the environment, or `reset` to stop whatever is on port 3000 and start clean.
+- **`Launch Job Search Suite.cmd`** (Windows, recommended) — double-click to check Node.js/npm, install dependencies if needed, find the next available port, clear stale build cache, start a fresh dev server, wait until it responds, and open the browser. Run it with `check` to validate the environment, or `reset` to stop this project's servers and start clean.
+- **`Launch Job Search Suite.command`** (macOS) and **`Launch Job Search Suite.sh`** (Linux) — equivalent wrappers. On macOS, right-click → *Open* the first time if Gatekeeper asks.
 - **`Launch Job Search Suite.html`** — right-click → *Send to* → *Desktop (create shortcut)*. It checks for the server and shows setup instructions if the server is not running.
-- **`Job Search Suite.url`** — a plain Internet Shortcut to `http://localhost:3000`. It only works while the server is already running.
+- **`Job Search Suite.url`** — a plain Internet Shortcut to `http://localhost:3000`. It only works while the server is using port 3000.
 
-The HTML file and `.url` shortcut require the dev server to be running (`npm run dev`). The `.cmd` launcher starts it for you. If the terminal shows a port other than 3000, open the printed URL instead.
+The HTML file and `.url` shortcut require the dev server to be running (`npm run dev`). The launchers start it for you and always print the actual URL.
 
 For a production run:
 
@@ -39,13 +42,14 @@ npm start
 
 ## Troubleshooting
 
-- **`npm` is not recognized:** Node.js is either not installed or not on PATH. Install Node.js 22 or newer from https://nodejs.org/ and reopen the terminal.
+- **`npm` is not recognized:** Node.js is either not installed or not on PATH. Install Node.js 18 or newer from https://nodejs.org/ and reopen the terminal.
+- **The launcher window closes immediately:** run it from an already-open Command Prompt so the error stays visible, or use `Launch Job Search Suite.cmd check` to print diagnostics.
 - **The HTML launcher shows "server is not running":** run `npm install` then `npm run dev` in the project folder, then reopen the launcher.
-- **Browser shows `ERR_CONNECTION_REFUSED`:** the Node server is not running, or it chose a different port. Check the terminal output.
-- **`Cannot find module './611.js'` or another stale chunk error:** a dev server is still running while `.next` was rebuilt. Run `Launch Job Search Suite.cmd reset`. To fix it manually, stop the server on port 3000, delete `.next`, and run `npm run dev` again.
+- **Browser shows `ERR_CONNECTION_REFUSED`:** open the exact URL printed by the launcher. Port 3000 may be taken by another program, in which case the app uses 3001–3010.
+- **`Cannot find module './611.js'` or another stale chunk error:** a dev server is still running while `.next` was rebuilt. Run `Launch Job Search Suite.cmd reset`. On macOS/Linux, stop the server, delete `.next`, and run `npm run dev` again.
 - **Stale chunks after `npm run build`:** stop the dev server before building. Do not run `npm run build` and `npm run dev` in the same folder at the same time; both write to `.next`.
 - **The workspace is empty after cloning:** expected. `data/` is git-ignored to keep resumes, jobs, and API keys private, so each clone starts fresh.
-- **Static hosting/GitHub Pages does not work:** expected. API routes and SQLite require a Node.js process; there is no static export. Use `npm run dev` or `npm start`.
+- **Static hosting/GitHub Pages does not work with the server build:** expected. API routes require a Node.js process. Use `npm run dev` or `npm start`.
 
 ## Using it
 
@@ -117,7 +121,7 @@ When configured, the app adds a short tailored assessment after computing the de
 
 ## Data and privacy
 
-Everything is stored locally in `data/job-search-suite.db` (SQLite) — no account, no cloud sync. The `data/` directory is git-ignored. API keys are stored in the same local database. Job-title discovery never sends your name, email, phone, or full resume text to a job source; keyless feeds receive no profile data at all.
+Everything is stored locally in `data/job-search-suite.db` (SQLite via the `sql.js` WebAssembly build) — no account, no cloud sync. The `data/` directory is git-ignored. API keys are stored in the same local database. Job-title discovery never sends your name, email, phone, or full resume text to a job source; keyless feeds receive no profile data at all.
 
 ## Project layout
 
@@ -129,11 +133,14 @@ lib/ats/                        Keyword extraction and scoring engine
 lib/jobs/                       Public feed adapters and source metadata
 lib/parse/                      Resume, LinkedIn export, and PDF/DOCX text extraction
 lib/titles/                     Resume signal extraction, ranking, and cache service
-lib/db.ts                       SQLite storage
+lib/db.ts                       SQLite storage via sql.js (WASM)
 lib/types.ts                    Shared profile and result types
-Launch Job Search Suite.cmd     Windows launcher (check/reset, port detection, starts server)
+scripts/launch.js               Cross-platform launcher logic and port fallback
+Launch Job Search Suite.cmd     Windows launcher wrapper
+Launch Job Search Suite.command macOS launcher wrapper
+Launch Job Search Suite.sh      Linux launcher wrapper
 Launch Job Search Suite.html    Browser launcher (checks server, then redirects)
-Job Search Suite.url            Plain localhost shortcut (requires a running server)
+Job Search Suite.url            Plain localhost shortcut (requires port 3000)
 package.json                    Scripts and Node engine requirement
 ```
 

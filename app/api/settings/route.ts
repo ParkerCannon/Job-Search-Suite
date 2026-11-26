@@ -6,14 +6,14 @@ import type { AppSettings } from "@/lib/types";
 export const runtime = "nodejs";
 
 export async function GET() {
-  return NextResponse.json({ settings: getSettings() });
+  return NextResponse.json({ settings: await getSettings() });
 }
 
 export async function PUT(request: Request) {
   try {
     const body = (await request.json()) as Partial<AppSettings>;
-    const current = getSettings();
-    const settings = saveSettings({
+    const current = await getSettings();
+    const settings = await saveSettings({
       ai: { ...current.ai, ...(body.ai ?? {}) },
       weights: { ...current.weights, ...(body.weights ?? {}) },
       targetRole: body.targetRole ?? current.targetRole,
