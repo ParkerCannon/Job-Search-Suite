@@ -13,6 +13,9 @@ const npmCmd = isWindows ? "npm.cmd" : "npm";
 const minNodeMajor = 18;
 const portStart = 3000;
 const portEnd = 3010;
+const gitCmd = "git";
+const updateTimeoutMs = 20000;
+const dependencyFiles = new Set(["package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"]);
 
 process.chdir(projectRoot);
 
@@ -44,20 +47,21 @@ function commandSucceeded(command, args) {
   }
 }
 
-function commandOutput(command, args) {
+function commandOutput(command, args, options = {}) {
   try {
     return execFileSync(command, args, {
       cwd: projectRoot,
       shell: isWindows,
       encoding: "utf8",
       windowsHide: true,
+      timeout: options.timeoutMs,
     }).trim();
   } catch {
     return "";
   }
 }
 
-function ensureEnvironment() {
+function ensureEnvironment(forceInstall = false) {
   const nodeVersion = process.versions.node;
   const nodeMajor = Number(nodeVersion.split(".")[0]);
   console.log(`Node.js: v${nodeVersion} (${process.execPath})`);
@@ -73,20 +77,130 @@ function ensureEnvironment() {
   }
   console.log(`npm: ${commandOutput(npmCmd, ["--version"]) || "available"}`);
 
-  if (!fs.existsSync(path.join(projectRoot, "node_modules", "next"))) {
-    console.log("Installing dependencies...");
-    const install = spawnSync(npmCmd, ["install"], {
+  if (forceInstall || !fs.existsSync(path.join(projectRoot, "node_modules", "next"))) {
+    const installArgs = forceInstall && fs.existsSync(path.join(projectRoot, "package-lock.json"))
+      ? ["ci"]
+      : ["install"];
+    console.log(forceInstall ? "Dependencies changed; refreshing npm packages..." : "Installing dependencies...");
+    const install = spawnSync(npmCmd, installArgs, {
       cwd: projectRoot,
       shell: isWindows,
       stdio: "inherit",
     });
     if (install.status !== 0) {
-      fail("npm install failed. Check the output above.");
+      fail(`npm ${installArgs[0]} failed. Check the output above.`);
       return false;
     }
   }
 
   return true;
+}
+
+function shortCommit(hash) {
+  return hash ? hash.slice(0, 7) : "unknown";
+}
+
+function updateFromGit() {
+  console.log("Checking for Git updates...");
+
+  if (
+    !commandSucceeded(gitCmd, ["--version"]) ||
+    !commandSucceeded(gitCmd, ["rev-parse", "--is-inside-work-tree"])
+  ) {
+    console.log("Auto-update: skipped because Git is unavailable or this folder is not a repository.");
+    return { dependenciesChanged: false };
+  }
+
+  if (!commandOutput(gitCmd, ["config", "--get", "remote.origin.url"])) {
+    console.log("Auto-update: skipped because no origin remote is configured.");
+    return { dependenciesChanged: false };
+  }
+
+  const dirty = commandOutput(gitCmd, ["status", "--porcelain", "--untracked-files=no"]);
+  if (dirty) {
+    console.log("Auto-update: skipped because you have uncommitted tracked changes.");
+    for (const line of dirty.split(/\r?\n/).slice(0, 5)) console.log(`  ${line}`);
+    return { dependenciesChanged: false };
+  }
+
+  const branch = commandOutput(gitCmd, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  if (!branch || branch === "HEAD") {
+    console.log("Auto-update: skipped because HEAD is detached.");
+    return { dependenciesChanged: false };
+  }
+
+  const oldHead = commandOutput(gitCmd, ["rev-parse", "HEAD"]);
+  if (!oldHead) {
+    console.log("Auto-update: skipped because the current commit could not be read.");
+    return { dependenciesChanged: false };
+  }
+
+  const fetch = spawnSync(gitCmd, ["fetch", "--prune", "origin"], {
+    cwd: projectRoot,
+    shell: isWindows,
+    stdio: "ignore",
+    timeout: updateTimeoutMs,
+    windowsHide: true,
+  });
+  if (fetch.status !== 0) {
+    console.log(`Auto-update: could not reach origin (${branch}); continuing with the local copy.`);
+    return { dependenciesChanged: false };
+  }
+
+  const remoteHead = commandOutput(gitCmd, ["rev-parse", `origin/${branch}`]);
+  if (!remoteHead) {
+    console.log(`Auto-update: origin/${branch} is not available; continuing with the local copy.`);
+    return { dependenciesChanged: false };
+  }
+  if (remoteHead === oldHead) {
+    console.log(`Auto-update: already up to date (${shortCommit(oldHead)}).`);
+    return { dependenciesChanged: false };
+  }
+
+  const counts = commandOutput(gitCmd, ["rev-list", "--left-right", "--count", `HEAD...origin/${branch}`]);
+  const [ahead, behind] = counts.split(/\s+/).map(Number);
+  if (!Number.isFinite(ahead) || !Number.isFinite(behind)) {
+    console.log("Auto-update: could not compare branches; continuing with the local copy.");
+    return { dependenciesChanged: false };
+  }
+  if (ahead > 0) {
+    console.log(`Auto-update: skipped because this branch has ${ahead} local commit(s) not on origin.`);
+    return { dependenciesChanged: false };
+  }
+  if (behind === 0) {
+    console.log("Auto-update: skipped because origin changed but cannot be fast-forwarded.");
+    return { dependenciesChanged: false };
+  }
+
+  const pull = spawnSync(gitCmd, ["pull", "--ff-only", "origin", branch], {
+    cwd: projectRoot,
+    shell: isWindows,
+    stdio: "inherit",
+    timeout: updateTimeoutMs,
+    windowsHide: true,
+  });
+  if (pull.status !== 0) {
+    console.log("Auto-update: pull failed; continuing with the local copy.");
+    return { dependenciesChanged: false };
+  }
+
+  const newHead = commandOutput(gitCmd, ["rev-parse", "HEAD"]);
+  if (!newHead || newHead === oldHead) {
+    console.log("Auto-update: pull finished with no commit change.");
+    return { dependenciesChanged: false };
+  }
+  console.log(`Auto-update: updated ${shortCommit(oldHead)} -> ${shortCommit(newHead)}.`);
+
+  const changedFiles = commandOutput(gitCmd, ["diff", "--name-only", `${oldHead}..${newHead}`])
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const dependenciesChanged = changedFiles.some((file) =>
+    dependencyFiles.has(file.split(/[\\/]/).pop() ?? ""),
+  );
+  if (dependenciesChanged) console.log("Auto-update: dependency files changed; npm will be refreshed.");
+
+  return { dependenciesChanged };
 }
 
 function responds(port, timeoutMs = 1200) {
@@ -277,7 +391,8 @@ async function runLaunch() {
 async function main() {
   printHeader();
 
-  if (!ensureEnvironment()) return;
+  const update = mode === "launch" ? updateFromGit() : { dependenciesChanged: false };
+  if (!ensureEnvironment(update.dependenciesChanged)) return;
 
   if (mode === "check") {
     await runCheck();
