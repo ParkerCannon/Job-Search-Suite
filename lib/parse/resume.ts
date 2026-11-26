@@ -1,4 +1,12 @@
-import { emptyProfile, makeCoreSkillGroup, uid, type Education, type Experience, type Profile } from "../types";
+import {
+  emptyProfile,
+  makeCoreSkillGroup,
+  uid,
+  type Education,
+  type Experience,
+  type Profile,
+  type SkillGroup,
+} from "../types";
 
 type SectionKey =
   | "summary"
@@ -152,7 +160,13 @@ function extractContact(text: string): { email: string; phone: string; links: { 
     const url = raw.startsWith("http") ? raw : `https://${raw}`;
     if (seen.has(url)) continue;
     seen.add(url);
-    const label = url.includes("linkedin") ? "LinkedIn" : url.includes("github") ? "GitHub" : "Website";
+    const label = url.includes("linkedin")
+      ? "LinkedIn"
+      : url.includes("github")
+        ? "GitHub"
+        : /artstation|behance|dribbble|portfolio/i.test(url)
+          ? "Portfolio"
+          : "Website";
     links.push({ label, url });
   }
   return { email, phone, links: links.slice(0, 6) };
@@ -171,27 +185,75 @@ function guessName(lines: string[], headings: Set<number>): string {
   return "";
 }
 
-function splitCompanyLocation(line: string): { company: string; location: string } {
-  const match = line.match(/^(.*?)\s+((?:[A-Z][a-z]+\s+){0,3}[A-Z][a-z]+,?\s*[A-Z]{2}|[A-Z][a-z]+,\s*[A-Za-z]+)$/);
-  if (match?.[1]?.trim()) return { company: match[1].trim(), location: (match[2] ?? "").trim() };
-  return { company: line, location: "" };
+function isBulletLine(line: string): boolean {
+  return /^[\u2022\u00b7\u25aa\u25e6*\-]\s+/.test(line.trimStart());
 }
 
 function looksLikeDateHeader(line: string): boolean {
   const trimmed = line.trim();
-  if (!trimmed || trimmed.length > 90) return false;
-  return DATE_RANGE.test(trimmed) || (/[|]/.test(trimmed) && DATE_TOKEN.test(trimmed));
+  if (!trimmed || trimmed.length > 90 || isBulletLine(trimmed)) return false;
+  return DATE_RANGE.test(trimmed) || DATE_ONLY.test(trimmed) || (/[|]/.test(trimmed) && DATE_TOKEN.test(trimmed));
+}
+
+function splitTitleCompany(line: string): { title: string; company: string } {
+  const parts = line.split(/\s*[|]\s*/).map((part) => part.trim()).filter(Boolean);
+  if (parts.length > 1) return { title: parts[0], company: parts.slice(1).join(", ") };
+  const at = line.match(/^(.{3,60}?)\s+(?:at|@)\s+(.{2,60})$/i);
+  if (at) return { title: at[1].trim(), company: at[2].trim() };
+  const comma = line.split(/\s*,\s*/).map((part) => part.trim()).filter(Boolean);
+  if (comma.length > 1) return { title: comma[0], company: comma.slice(1).join(", ") };
+  return { title: line, company: "" };
+}
+
+function joinDescription(lines: string[]): string {
+  const bullets: string[] = [];
+  let previousWasBullet = false;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (isBulletLine(line)) {
+      bullets.push(line.replace(/^[\u2022\u00b7\u25aa\u25e6*\-]\s+/, "").trim());
+      previousWasBullet = true;
+    } else if (previousWasBullet && bullets.length) {
+      // PDF bullets wrap onto a second line; keep each bullet in one field.
+      bullets[bullets.length - 1] += " " + line;
+    } else {
+      bullets.push(line);
+      previousWasBullet = false;
+    }
+  }
+  return bullets.join("\n");
 }
 
 function parseExperienceBlocks(lines: string[]): Experience[] {
   const blocks: string[][] = [];
   let current: string[] = [];
 
-  for (const line of lines) {
+  let sawBullet = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
     if (!line) continue;
-    if (looksLikeDateHeader(line) && current.length) {
+    if (isBulletLine(line)) {
+      sawBullet = true;
+      current.push(line);
+      continue;
+    }
+    // A plain line is a new role only when a date line follows it. A wrapped
+    // bullet continuation ("workflows on schedule.") has no date after it.
+    const followedByDate = index + 1 < lines.length && looksLikeDateHeader(lines[index + 1]);
+    if (sawBullet && current.length && followedByDate) {
       blocks.push(current);
       current = [];
+      sawBullet = false;
+    } else if (
+      looksLikeDateHeader(line) &&
+      current.length &&
+      current.some((item) => looksLikeDateHeader(item))
+    ) {
+      // No-bullet format: a second date line starts a new role.
+      blocks.push(current);
+      current = [];
+      sawBullet = false;
     }
     current.push(line);
   }
@@ -201,46 +263,52 @@ function parseExperienceBlocks(lines: string[]): Experience[] {
     const allDates = block.flatMap((line) => line.match(DATE_RANGE) ?? []);
     const [startDate, endDate] = extractDates(allDates[0] ?? "");
 
-    const headerLines = block
-      .filter((line) => !(DATE_RANGE.test(line) && !line.replace(DATE_RANGE, "").trim()))
-      .map((line) => line.replace(DATE_RANGE, "").replace(/[|•·—–]\s*$/, "").trim())
-      .filter(Boolean);
+    const firstBullet = block.findIndex((line) => isBulletLine(line));
+    const headerRaw = firstBullet >= 0 ? block.slice(0, firstBullet) : block.slice(0, Math.min(3, block.length));
+    const descriptionLines = firstBullet >= 0 ? block.slice(firstBullet) : block.slice(headerRaw.length);
+
+    const dateLines = headerRaw.filter((line) => looksLikeDateHeader(line));
+    const nameLines = headerRaw.filter((line) => !looksLikeDateHeader(line));
+    const locationLine = nameLines.find((line) => /,\s*[A-Z]{2}\b/.test(line));
+    const titleLines = nameLines.filter((line) => line !== locationLine);
 
     let title = "";
     let company = "";
-    let location = "";
-    let descriptionStart = 0;
+    let location = locationLine ?? "";
 
-    const pipeIndex = headerLines.findIndex((line) => line.includes("|"));
-    if (pipeIndex >= 0) {
-      const pieces = headerLines[pipeIndex].split(/\s*[|]\s*/).filter(Boolean);
-      if (pipeIndex === 0) {
-        // "Title | Company | Location | Dates"
-        title = pieces[0] ?? "";
-        company = pieces[1] ?? "";
-        location = pieces.slice(2).join(", ");
+    if (titleLines.length) {
+      if (
+        titleLines.length > 1 &&
+        !/[|,@]/.test(titleLines[0]) &&
+        !/\b(?:at|@)\b/i.test(titleLines[0])
+      ) {
+        title = titleLines[0];
+        company = titleLines.slice(1).join(", ");
       } else {
-        // "Title" on one line, then "Company | Location" from a PDF column.
-        title = headerLines[0] ?? "";
-        company = pieces[0] ?? "";
-        location = pieces.slice(1).join(", ");
+        const parsed = splitTitleCompany(titleLines.join(" "));
+        title = parsed.title;
+        company = parsed.company;
       }
-      descriptionStart = pipeIndex + 1;
-    } else {
-      const atMatchIndex = headerLines.findIndex((line) => /^(.{3,60}?)\s+(?:at|@)\s+(.{2,60})$/i.test(line));
-      if (atMatchIndex >= 0) {
-        const match = headerLines[atMatchIndex].match(/^(.{3,60}?)\s+(?:at|@)\s+(.{2,60})$/i);
-        title = match?.[1] ?? "";
-        company = match?.[2] ?? "";
-        descriptionStart = atMatchIndex + 1;
+    }
+
+    for (const line of dateLines) {
+      const cleaned = line
+        .replace(DATE_RANGE, "")
+        .replace(/^[|•·—–]\s*/, "")
+        .replace(/[|•·—–]\s*$/, "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+      const pieces = cleaned.split(/\s*[|]\s*/).filter(Boolean);
+      if (!pieces.length) continue;
+      if (!titleLines.length) {
+        title = title || pieces[0];
+        company = company || pieces[1] || "";
+        location = location || pieces.slice(2).join(", ");
+      } else if (!company && pieces.length > 1 && !/,\s*[A-Z]{2}\b/.test(pieces[0])) {
+        company = pieces[0];
+        location = location || pieces.slice(1).join(", ");
       } else {
-        title = headerLines[0] ?? "";
-        if (headerLines.length > 1) {
-          const split = splitCompanyLocation(headerLines[1]);
-          company = split.company;
-          location = split.location;
-        }
-        descriptionStart = 2;
+        location = location || pieces.join(", ");
       }
     }
 
@@ -252,7 +320,7 @@ function parseExperienceBlocks(lines: string[]): Experience[] {
       startDate,
       endDate,
       current: /present|current|now/i.test(`${startDate} ${endDate}`),
-      description: headerLines.slice(descriptionStart).join("\n"),
+      description: joinDescription(descriptionLines),
     };
   });
 }
@@ -260,7 +328,8 @@ function parseExperienceBlocks(lines: string[]): Experience[] {
 function parseEducationBlocks(lines: string[]): Education[] {
   const blocks: string[][] = [];
   let current: string[] = [];
-  const isAnchor = (line: string) => DATE_RANGE.test(line) || (/[|]/.test(line) && DATE_TOKEN.test(line));
+  const isAnchor = (line: string) =>
+    DATE_RANGE.test(line) || DATE_ONLY.test(line.trim()) || (/[|]/.test(line) && DATE_TOKEN.test(line));
 
   for (const line of lines) {
     if (!line) continue;
@@ -274,32 +343,44 @@ function parseEducationBlocks(lines: string[]): Education[] {
   if (current.length) blocks.push(current);
 
   const degreeRe = /\b(?:bachelor|master|doctor|ph\.?d|mba|b\.?s\.?|m\.?s\.?|b\.?a\.?|m\.?a\.?|associate(?:s|d)?|diploma|certificate)\b/i;
+  const schoolRe = /university|college|institute|school|academy/i;
   return blocks.slice(0, 12).map((block) => {
     const anchorIndex = block.findIndex((line) => isAnchor(line));
     const anchor = anchorIndex >= 0 ? block[anchorIndex] : "";
     const anchorPieces = anchor.split(/\s*[|]\s*/).map((part) => part.trim()).filter(Boolean);
-    const schoolFromPipe = anchorPieces[0] ?? "";
-    const dateSource = anchorPieces.slice(1).join(" ") || (anchor.match(DATE_RANGE)?.[0] ?? "");
+    const dateSource =
+      anchorPieces.slice(1).join(" ") ||
+      anchor.match(DATE_RANGE)?.[0] ||
+      (DATE_ONLY.test(anchor.trim()) ? anchor.trim() : "");
     const [startDate, endDate] = extractDates(dateSource);
 
     const contentLines = block.filter((_, index) => index !== anchorIndex);
-    const degreeLine =
-      contentLines.find((line) => degreeRe.test(line) && line.includes(",")) ??
-      contentLines.find((line) => degreeRe.test(line)) ??
-      "";
+    const degreeLine = contentLines.find((line) => degreeRe.test(line)) ?? "";
     let degree = "";
     let field = "";
+    let school = "";
+
     if (degreeLine) {
-      const [first, ...rest] = degreeLine.split(/\s*,\s*/);
-      degree = first.trim();
-      field = rest.join(", ").trim();
+      // "Degree, Field, School" is the common single-line education format.
+      const parts = degreeLine.split(/\s*,\s*/).map((part) => part.trim()).filter(Boolean);
+      degree = parts[0] ?? "";
+      const schoolIndex = parts.findIndex((part, index) => index > 1 && schoolRe.test(part));
+      if (schoolIndex > 1) {
+        field = parts.slice(1, schoolIndex).join(", ");
+        school = parts.slice(schoolIndex).join(", ");
+      } else {
+        field = parts.slice(1, -1).join(", ");
+        school = parts[parts.length - 1] ?? "";
+      }
     }
-    const school =
-      schoolFromPipe ||
-      contentLines.find((line) => /university|college|institute|school|academy/i.test(line)) ||
-      "";
-    const location = contentLines.find((line) => line !== degreeLine && line !== school) ?? "";
-    const details = contentLines.filter((line) => line !== degreeLine && line !== school && line !== location).join("\n");
+
+    const schoolLine = contentLines.find((line) => schoolRe.test(line) && line !== degreeLine);
+    if (!school) school = schoolLine ?? anchorPieces.find((part) => part && !DATE_TOKEN.test(part)) ?? "";
+    const location =
+      contentLines.find((line) => line !== degreeLine && line !== schoolLine && /,\s*[A-Z]{2}\b/.test(line)) ?? "";
+    const details = contentLines
+      .filter((line) => line !== degreeLine && line !== schoolLine && line !== location)
+      .join("\n");
 
     return {
       id: uid(),
@@ -313,38 +394,101 @@ function parseEducationBlocks(lines: string[]): Education[] {
   });
 }
 
-function parseSkills(lines: string[]): string[] {
-  const joined = lines.join(" ").replace(/\b(?:technical|core|key)\s+skills?\b:?/gi, "");
-  const parts = joined
-    .split(/(?:,|;|\||•|·|\u2022|\n|\s{2,})+/)
-    .map((s) => s.replace(/^[-\s]+/, "").trim())
-    .filter((s) => s.length >= 2 && s.length <= 45 && !/^(?:and|with|including|etc\.?)$/i.test(s));
-  const unique = [...new Set(parts)];
-  return unique.slice(0, 80);
+const SKILL_GROUP_LABEL =
+  /^(?:core|technical|technology|technologies|tools?|software|key|primary|soft|programming|languages?|frameworks?|databases?|cloud|platforms?|skills?|expertise|competencies|domains?|specialties|proficiencies)$/i;
+
+function parseSkillGroups(lines: string[]): SkillGroup[] {
+  type Draft = Omit<SkillGroup, "items"> & { raw: string };
+  const groups: Draft[] = [];
+
+  function makeDraft(label?: string): Draft {
+    const core = makeCoreSkillGroup();
+    if (label && !/^core$/i.test(label)) {
+      return { id: uid(), group: fromAllCaps(label), locked: false, raw: "" };
+    }
+    return { id: core.id, group: core.group, locked: core.locked, raw: "" };
+  }
+
+  function append(group: Draft, text: string) {
+    const next = text.trim();
+    if (!next) return;
+    if (!group.raw) {
+      group.raw = next;
+    } else {
+      // A line that ends with a delimiter is a new item; otherwise it wrapped.
+      group.raw += /[,;|•·]$/.test(group.raw.trim()) ? "\n" + next : " " + next;
+    }
+  }
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    const labeled = line.match(/^([A-Za-z][\w /&+-]{1,40}):\s*(.*)$/);
+    if (labeled && SKILL_GROUP_LABEL.test(labeled[1].trim())) {
+      const group = makeDraft(labeled[1].trim());
+      groups.push(group);
+      append(group, labeled[2]);
+      continue;
+    }
+    if (!groups.length) groups.push(makeDraft());
+    append(groups[groups.length - 1], line);
+  }
+
+  if (!groups.length) groups.push(makeDraft());
+  return groups.slice(0, 12).map((group) => ({
+    id: group.id,
+    group: group.group,
+    locked: group.locked,
+    items: [...new Set(
+      group.raw
+        .split(/[,;|•·\n]+/)
+        .map((item) => item.replace(/^[-\s]+/, "").trim())
+        .filter((item) => item.length >= 2 && item.length <= 45 && !/^(?:and|with|including|etc\.?)$/i.test(item)),
+    )].slice(0, 80),
+  }));
 }
 
 function parseCertifications(lines: string[]): { id: string; name: string; issuer: string; date: string }[] {
-  const groups: { date: string; lines: string[] }[] = [];
-  let current: { date: string; lines: string[] } | null = null;
+  const certifications: { id: string; name: string; issuer: string; date: string }[] = [];
+  let pending: { date: string; lines: string[] } | null = null;
 
-  for (const line of lines) {
+  function flush() {
+    const current = pending;
+    pending = null;
+    if (!current?.lines.length) return;
+    certifications.push({
+      id: uid(),
+      name: current.lines[0],
+      issuer: current.lines.slice(1).join(" "),
+      date: current.date,
+    });
+  }
+
+  for (const raw of lines) {
+    const line = raw.replace(/^[\u2022\u00b7\u25aa\u25e6*\-]\s*/, "").trim();
     if (!line) continue;
-    if (DATE_ONLY.test(line.trim())) {
-      if (current) groups.push(current);
-      current = { date: line.trim(), lines: [] };
+    const pieces = line.split(/\s*[|]\s*/).map((part) => part.trim()).filter(Boolean);
+    if (pieces.length > 1) {
+      flush();
+      const date = pieces.slice(1).find((part) => DATE_ONLY.test(part)) ?? "";
+      certifications.push({
+        id: uid(),
+        name: pieces[0],
+        issuer: pieces.slice(1).filter((part) => part !== date).join(", "),
+        date,
+      });
+      continue;
+    }
+    if (DATE_ONLY.test(line)) {
+      flush();
+      pending = { date: line, lines: [] };
     } else {
-      if (!current) current = { date: "", lines: [] };
-      current.lines.push(line);
+      if (!pending) pending = { date: "", lines: [] };
+      pending.lines.push(line);
     }
   }
-  if (current) groups.push(current);
-
-  return groups.slice(0, 20).map((group) => ({
-    id: uid(),
-    name: group.lines[0] ?? "",
-    issuer: group.lines.slice(1).join(" "),
-    date: group.date,
-  }));
+  flush();
+  return certifications.slice(0, 20);
 }
 
 function parseSimpleBlocks(lines: string[]): { name: string; description: string }[] {
@@ -401,7 +545,7 @@ export function parseResumeText(raw: string): Profile {
   profile.summary = (sections.summary ?? []).filter(Boolean).join(" ").slice(0, 3000);
   profile.experience = parseExperienceBlocks(sections.experience ?? []);
   profile.education = parseEducationBlocks(sections.education ?? []);
-  profile.skills = [{ ...makeCoreSkillGroup(), items: parseSkills(sections.skills ?? []) }];
+  profile.skills = parseSkillGroups(sections.skills ?? []);
   profile.certifications = parseCertifications(sections.certifications ?? []);
   profile.projects = parseSimpleBlocks(sections.projects ?? []).map((b) => {
     const colon = b.name.indexOf(":");
