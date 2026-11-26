@@ -16,11 +16,14 @@ import type {
   AtsAnalysisRecord,
   AppSettings,
   JobDescription,
+  KeywordAnalysis,
   Profile,
   ProfileSource,
   StoredProfile,
   TitlesPayload,
 } from "@/lib/types";
+import { serverStore } from "@/lib/store/server";
+import type { AppStore } from "@/lib/store/contract";
 import Overview from "./Overview";
 import ProfileWorkspace from "./ProfileWorkspace";
 import JobManager from "./JobManager";
@@ -39,7 +42,7 @@ const NAV: { id: Section; label: string; icon: typeof LayoutDashboard; hint: str
   { id: "settings", label: "Settings", icon: SettingsIcon, hint: "AI & sources" },
 ];
 
-export default function App() {
+export default function App({ store = serverStore }: { store?: AppStore }) {
   const [section, setSection] = useState<Section>("overview");
   const [profiles, setProfiles] = useState<Record<string, StoredProfile | null>>({});
   const [jobs, setJobs] = useState<JobDescription[]>([]);
@@ -62,24 +65,18 @@ export default function App() {
 
   const loadAll = useCallback(async () => {
     try {
-      const [p, j, a, s, t] = await Promise.all([
-        fetch("/api/profile").then((r) => r.json()),
-        fetch("/api/jobs").then((r) => r.json()),
-        fetch("/api/analyses").then((r) => r.json()),
-        fetch("/api/settings").then((r) => r.json()),
-        fetch("/api/titles").then((r) => r.json()),
-      ]);
-      setProfiles(p);
-      setJobs(j.jobs ?? []);
-      setAnalyses(a.analyses ?? []);
-      setSettings(s.settings ?? null);
-      setTitles(t as TitlesPayload);
-    } catch {
-      notify("Could not load local data.", true);
+      const snapshot = await store.loadAll();
+      setProfiles(snapshot.profiles);
+      setJobs(snapshot.jobs);
+      setAnalyses(snapshot.analyses);
+      setSettings(snapshot.settings);
+      setTitles(snapshot.titles);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Could not load local data.", true);
     } finally {
       setLoading(false);
     }
-  }, [notify]);
+  }, [notify, store]);
 
   useEffect(() => {
     void loadAll();
@@ -88,12 +85,7 @@ export default function App() {
   async function importProfile(source: "resume" | "linkedin", file: File | null, text: string) {
     setBusy(source);
     try {
-      const form = new FormData();
-      if (file) form.append("file", file);
-      if (text.trim()) form.append("text", text);
-      const response = await fetch(`/api/parse/${source}`, { method: "POST", body: form });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Import failed.");
+      await store.importProfile(source, file, text);
       await loadAll();
       notify(source === "resume" ? "Resume imported and parsed." : "LinkedIn profile imported.");
       setSection("profile");
@@ -107,13 +99,7 @@ export default function App() {
   async function saveActiveProfile(profile: Profile) {
     setBusy("profile");
     try {
-      const response = await fetch("/api/profile", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Save failed.");
+      await store.saveActiveProfile(profile);
       await loadAll();
       notify("Profile saved.");
     } catch (error) {
@@ -126,13 +112,7 @@ export default function App() {
   async function resetProfile(source: ProfileSource) {
     setBusy("reset");
     try {
-      const response = await fetch("/api/profile", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resetFrom: source }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Reset failed.");
+      await store.resetProfile(source);
       await loadAll();
       notify(`Working profile reset from ${source}.`);
     } catch (error) {
@@ -145,16 +125,10 @@ export default function App() {
   async function addJob(title: string, company: string, rawText: string) {
     setBusy("job");
     try {
-      const response = await fetch("/api/jobs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, company, rawText }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Could not save job.");
+      const job = await store.addJob(title, company, rawText);
       await loadAll();
       notify("Job description saved.");
-      return data.job as JobDescription;
+      return job;
     } catch (error) {
       notify(error instanceof Error ? error.message : "Could not save job.", true);
       return null;
@@ -166,7 +140,7 @@ export default function App() {
   async function removeJob(id: string) {
     setBusy("job");
     try {
-      await fetch(`/api/jobs/${id}`, { method: "DELETE" });
+      await store.removeJob(id);
       await loadAll();
       notify("Job description removed.");
     } finally {
@@ -177,7 +151,7 @@ export default function App() {
   async function clearJobs() {
     setBusy("job");
     try {
-      await fetch("/api/jobs", { method: "DELETE" });
+      await store.clearJobs();
       await loadAll();
       notify("All job descriptions and their ATS checks were deleted.");
     } finally {
@@ -188,7 +162,7 @@ export default function App() {
   async function removeAnalysis(id: string) {
     setBusy("analysis");
     try {
-      await fetch(`/api/analyses/${id}`, { method: "DELETE" });
+      await store.removeAnalysis(id);
       await loadAll();
       notify("ATS check deleted.");
     } finally {
@@ -199,7 +173,7 @@ export default function App() {
   async function clearAnalyses() {
     setBusy("analysis");
     try {
-      await fetch("/api/analyses", { method: "DELETE" });
+      await store.clearAnalyses();
       await loadAll();
       notify("All ATS checks were deleted.");
     } finally {
@@ -210,11 +184,13 @@ export default function App() {
   async function refreshTitles() {
     setBusy("titles");
     try {
-      const response = await fetch("/api/titles/refresh", { method: "POST" });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Could not refresh job titles.");
-      setTitles(data as TitlesPayload);
-      notify("Job titles refreshed from public sources.");
+      const data = await store.refreshTitles();
+      setTitles(data);
+      notify(
+        store.mode === "local"
+          ? "Title suggestions rebuilt from saved job descriptions."
+          : "Job titles refreshed from public sources.",
+      );
     } catch (error) {
       notify(error instanceof Error ? error.message : "Could not refresh job titles.", true);
     } finally {
@@ -225,10 +201,8 @@ export default function App() {
   async function clearTitles() {
     setBusy("titles-clear");
     try {
-      const response = await fetch("/api/titles", { method: "DELETE" });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Could not clear cached titles.");
-      setTitles(data.data as TitlesPayload);
+      const data = await store.clearTitles();
+      setTitles(data);
       notify("Cached job titles and refresh history deleted.");
     } catch (error) {
       notify(error instanceof Error ? error.message : "Could not clear cached titles.", true);
@@ -240,14 +214,8 @@ export default function App() {
   async function runAnalysis(jobId: string, source: ProfileSource) {
     setBusy("ats");
     try {
-      const response = await fetch("/api/ats/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId, source }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Analysis failed.");
-      setAnalyses((prev) => [data.record, ...prev]);
+      const record = await store.runAnalysis(jobId, source);
+      setAnalyses((prev) => [record, ...prev]);
       notify("ATS analysis complete.");
     } catch (error) {
       notify(error instanceof Error ? error.message : "Analysis failed.", true);
@@ -256,17 +224,15 @@ export default function App() {
     }
   }
 
+  async function analyzeKeywords(rawText: string, source: ProfileSource): Promise<KeywordAnalysis> {
+    return store.analyzeKeywords(rawText, source);
+  }
+
   async function saveAppSettings(next: AppSettings) {
     setBusy("settings");
     try {
-      const response = await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(next),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Could not save settings.");
-      setSettings(data.settings);
+      const saved = await store.saveSettings(next);
+      setSettings(saved);
       await loadAll();
       notify("Settings saved.");
     } catch (error) {
@@ -384,6 +350,7 @@ export default function App() {
                   onDelete={removeJob}
                   onClearJobs={clearJobs}
                   onSaveProfile={saveActiveProfile}
+                  onAnalyzeKeywords={analyzeKeywords}
                   onAnalyze={(jobId) => {
                     setSection("ats");
                     void runAnalysis(jobId, "active");
@@ -400,6 +367,8 @@ export default function App() {
                   onClear={clearTitles}
                   onNavigateSettings={() => setSection("settings")}
                   onNavigateProfile={() => setSection("profile")}
+                  onNavigateJobs={() => setSection("jobs")}
+                  staticMode={store.mode === "local"}
                 />
               )}
               {section === "ats" && (
@@ -415,7 +384,42 @@ export default function App() {
                 />
               )}
               {section === "settings" && (
-                <SettingsPanel settings={settings} busy={busy} onSave={saveAppSettings} />
+                <SettingsPanel
+                  settings={settings}
+                  busy={busy}
+                  onSave={saveAppSettings}
+                  staticMode={store.mode === "local"}
+                  onExportBackup={
+                    store.exportBackup
+                      ? async () => {
+                          const json = store.exportBackup!();
+                          const blob = new Blob([json], { type: "application/json" });
+                          const url = URL.createObjectURL(blob);
+                          const link = document.createElement("a");
+                          link.href = url;
+                          link.download = `job-search-suite-backup-${new Date().toISOString().slice(0, 10)}.json`;
+                          link.click();
+                          URL.revokeObjectURL(url);
+                        }
+                      : undefined
+                  }
+                  onImportBackup={
+                    store.importBackup
+                      ? async (json) => {
+                          await store.importBackup!(json);
+                          await loadAll();
+                        }
+                      : undefined
+                  }
+                  onClearLocalData={
+                    store.clearLocalData
+                      ? async () => {
+                          await store.clearLocalData!();
+                          await loadAll();
+                        }
+                      : undefined
+                  }
+                />
               )}
             </div>
           )}

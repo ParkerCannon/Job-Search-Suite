@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 import {
   AlertCircle,
+  Download,
   KeyRound,
   Link2,
   Loader2,
@@ -11,6 +12,8 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  Trash2,
+  Upload,
 } from "lucide-react";
 import { JOB_SOURCE_META } from "@/lib/jobs/sourceInfo";
 import { DEFAULT_JOB_DISCOVERY_SETTINGS, JOB_SOURCE_IDS } from "@/lib/types";
@@ -21,6 +24,10 @@ type Props = {
   settings: AppSettings;
   busy: string | null;
   onSave: (settings: AppSettings) => Promise<void>;
+  staticMode?: boolean;
+  onExportBackup?: () => Promise<void>;
+  onImportBackup?: (json: string) => Promise<void>;
+  onClearLocalData?: () => Promise<void>;
 };
 
 const WEIGHT_LABELS: { key: string; label: string; description: string }[] = [
@@ -37,8 +44,11 @@ const parseList = (value: string): string[] =>
     .map((item) => item.trim())
     .filter(Boolean);
 
-export default function SettingsPanel({ settings, busy, onSave }: Props) {
+export default function SettingsPanel({ settings, busy, onSave, staticMode = false, onExportBackup, onImportBackup, onClearLocalData }: Props) {
   const [draft, setDraft] = useState<AppSettings>(settings);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupMessage, setBackupMessage] = useState("");
+  const fileInput = useRef<HTMLInputElement>(null);
   const total = Object.values(draft.weights).reduce((a, b) => a + b, 0);
   const discovery = draft.jobDiscovery ?? DEFAULT_JOB_DISCOVERY_SETTINGS;
 
@@ -59,12 +69,30 @@ export default function SettingsPanel({ settings, busy, onSave }: Props) {
       return { ...d, jobDiscovery: { ...current, enabledSources: enabled } };
     });
 
+  async function restoreBackup(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file || !onImportBackup) return;
+    setBackupBusy(true);
+    setBackupMessage("");
+    try {
+      await onImportBackup(await file.text());
+      setBackupMessage("Backup restored. Your settings have been refreshed.");
+    } catch (error) {
+      setBackupMessage(error instanceof Error ? error.message : "Could not restore this backup.");
+    } finally {
+      event.target.value = "";
+      setBackupBusy(false);
+    }
+  }
+
   return (
     <>
       <SectionHeader
         eyebrow="Preferences"
         title="Settings"
-        description="Configure optional AI assistance, tune the ATS score, and choose public job feeds for title discovery. Settings are stored locally."
+        description={staticMode
+          ? "Browser-only mode: settings and workspace data live in this browser. API keys stay in memory for this session and are never written to a backup."
+          : "Configure optional AI assistance, tune the ATS score, and choose public job feeds for title discovery. Settings are stored locally."}
         action={
           <button className="btn-primary" disabled={busy === "settings"} onClick={() => void onSave(draft)}>
             {busy === "settings" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -116,6 +144,11 @@ export default function SettingsPanel({ settings, busy, onSave }: Props) {
               With a cloud provider selected, job descriptions and resume text are sent to that service when you run an analysis. Ollama keeps everything on this machine.
             </p>
           </div>
+          {staticMode && (
+            <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+              AI is off by default. In this browser-only build, any key you enter is used for the current session only; close the page and it is gone.
+            </p>
+          )}
         </Card>
 
         <Card className="p-6">
@@ -192,7 +225,9 @@ export default function SettingsPanel({ settings, busy, onSave }: Props) {
       <Card className="mt-6 p-6">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-white"><Search className="h-4 w-4 text-accent-400" /> Job title discovery</h2>
         <p className="muted mt-1.5 text-xs">
-          Enable public feeds, then use the <span className="text-slate-200">Job titles</span> tab to refresh. Fetches are manual and cached for 24 hours. Only compact listing metadata is stored.
+          {staticMode
+            ? "Public feeds are unavailable in the browser-only build. These settings are kept for a future server build; the Job titles tab derives suggestions from your saved descriptions instead."
+            : <>Enable public feeds, then use the <span className="text-slate-200">Job titles</span> tab to refresh. Fetches are manual and cached for 24 hours. Only compact listing metadata is stored.</>}
         </p>
 
         <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -295,6 +330,53 @@ export default function SettingsPanel({ settings, busy, onSave }: Props) {
           </p>
         </div>
       </Card>
+
+      {staticMode && (onExportBackup || onImportBackup || onClearLocalData) && (
+        <Card className="mt-6 p-6">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-white"><Download className="h-4 w-4 text-accent-400" /> Local workspace backup</h2>
+          <p className="muted mt-1.5 text-xs">
+            Export profiles, jobs, ATS checks, and settings as JSON. The file contains private resume text, so store it somewhere safe. API keys are never included.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            {onExportBackup && (
+              <button
+                className="btn-primary text-xs"
+                disabled={backupBusy}
+                onClick={async () => {
+                  setBackupBusy(true);
+                  try { await onExportBackup(); setBackupMessage("Backup downloaded."); }
+                  catch (error) { setBackupMessage(error instanceof Error ? error.message : "Could not export backup."); }
+                  finally { setBackupBusy(false); }
+                }}
+              >
+                <Download className="h-4 w-4" /> Export JSON
+              </button>
+            )}
+            {onImportBackup && (
+              <>
+                <input ref={fileInput} type="file" accept=".json,application/json" className="hidden" onChange={(event) => void restoreBackup(event)} />
+                <button className="btn-ghost text-xs" disabled={backupBusy} onClick={() => fileInput.current?.click()}>
+                  {backupBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Restore JSON
+                </button>
+              </>
+            )}
+            {onClearLocalData && (
+              <button
+                className="btn-ghost text-xs text-rose-300/80 hover:text-rose-300"
+                disabled={backupBusy}
+                onClick={() => {
+                  if (window.confirm("Delete all data stored in this browser? Export a backup first if you want to keep it.")) {
+                    void onClearLocalData().then(() => setBackupMessage("Local data deleted."));
+                  }
+                }}
+              >
+                <Trash2 className="h-4 w-4" /> Delete local data
+              </button>
+            )}
+          </div>
+          {backupMessage && <p className="mt-3 text-[11px] text-slate-400">{backupMessage}</p>}
+        </Card>
+      )}
     </>
   );
 }

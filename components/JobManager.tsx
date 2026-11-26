@@ -34,6 +34,7 @@ type Props = {
   onDelete: (id: string) => Promise<void>;
   onClearJobs: () => Promise<void>;
   onSaveProfile: (profile: Profile) => Promise<void>;
+  onAnalyzeKeywords: (rawText: string, source: ProfileSource) => Promise<KeywordAnalysis>;
   onAnalyze: (jobId: string) => void;
   onNavigateTitles: () => void;
 };
@@ -44,7 +45,7 @@ const SOURCE_LABELS: Record<ProfileSource, string> = {
   linkedin: "LinkedIn profile",
 };
 
-export default function JobManager({ jobs, profiles, busy, onAdd, onDelete, onClearJobs, onSaveProfile, onAnalyze, onNavigateTitles }: Props) {
+export default function JobManager({ jobs, profiles, busy, onAdd, onDelete, onClearJobs, onSaveProfile, onAnalyzeKeywords, onAnalyze, onNavigateTitles }: Props) {
   const [title, setTitle] = useState("");
   const [company, setCompany] = useState("");
   const [rawText, setRawText] = useState("");
@@ -74,14 +75,8 @@ export default function JobManager({ jobs, profiles, busy, onAdd, onDelete, onCl
     setAnalyzing(true);
     setAnalysisError("");
     try {
-      const response = await fetch("/api/analysis/keywords", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rawText: text, source }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Analysis failed.");
-      if (id === requestId.current) setAnalysis(data as KeywordAnalysis);
+      const data = await onAnalyzeKeywords(text, source);
+      if (id === requestId.current) setAnalysis(data);
     } catch (error) {
       if (id === requestId.current) {
         setAnalysis(null);
@@ -90,7 +85,7 @@ export default function JobManager({ jobs, profiles, busy, onAdd, onDelete, onCl
     } finally {
       if (id === requestId.current) setAnalyzing(false);
     }
-  }, []);
+  }, [onAnalyzeKeywords]);
 
   // Re-run as the user types, with a short debounce so pasting is instant.
   useEffect(() => {

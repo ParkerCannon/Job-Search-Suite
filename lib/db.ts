@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import initSqlJs, { type Database, type SqlJsStatic } from "sql.js";
-import { DEFAULT_JOB_DISCOVERY_SETTINGS, emptyProfile, normalizeProfile } from "./types";
+import { DEFAULT_APP_SETTINGS, emptyProfile, normalizeProfile } from "./types";
 import { normalizeJobDiscoverySettings } from "./jobs/sourceInfo";
 import { normalizeSeniority } from "./jobs/metadata";
 import type {
@@ -146,19 +146,7 @@ function runSql(db: Database, sql: string, params: unknown[] = []): void {
   persist(db);
 }
 
-const defaultSettings: AppSettings = {
-  ai: { provider: "none", baseUrl: "http://localhost:11434", model: "llama3.1", apiKey: "" },
-  weights: {
-    keywords: 40,
-    skills: 25,
-    experience: 15,
-    structure: 10,
-    achievements: 10,
-  },
-  targetRole: "",
-  jobDiscovery: { ...DEFAULT_JOB_DISCOVERY_SETTINGS },
-  profileLinks: { linkedin: "", indeed: "" },
-};
+const defaultSettings: AppSettings = DEFAULT_APP_SETTINGS;
 
 function defaultTitleRefreshState(): TitleRefreshStatus {
   return {

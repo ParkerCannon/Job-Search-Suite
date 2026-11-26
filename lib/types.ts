@@ -271,6 +271,14 @@ export interface AppSettings {
   profileLinks: ProfileLinksSettings;
 }
 
+export const DEFAULT_APP_SETTINGS: AppSettings = {
+  ai: { provider: "none", baseUrl: "http://localhost:11434", model: "llama3.1", apiKey: "" },
+  weights: { keywords: 40, skills: 25, experience: 15, structure: 10, achievements: 10 },
+  targetRole: "",
+  jobDiscovery: { ...DEFAULT_JOB_DISCOVERY_SETTINGS },
+  profileLinks: { linkedin: "", indeed: "" },
+};
+
 export interface JobSourceInfo {
   id: JobSourceId;
   label: string;

@@ -36,6 +36,8 @@ type Props = {
   onClear: () => Promise<void>;
   onNavigateSettings: () => void;
   onNavigateProfile: () => void;
+  onNavigateJobs?: () => void;
+  staticMode?: boolean;
 };
 
 function formatDate(value: string | null): string {
@@ -65,6 +67,8 @@ export default function TitleRecommendations({
   onClear,
   onNavigateSettings,
   onNavigateProfile,
+  onNavigateJobs,
+  staticMode = false,
 }: Props) {
   const profileReady = Boolean(
     profiles.active?.profile?.name ||
@@ -96,7 +100,9 @@ export default function TitleRecommendations({
       <SectionHeader
         eyebrow="Job titles"
         title="Find titles worth searching for."
-        description="Compare your working resume against current public job feeds and see the roles that repeat most often for your background. Nothing from your profile text is sent to the keyless feeds."
+        description={staticMode
+          ? "This browser-only build never contacts a job feed. Save job descriptions and rebuild suggestions from their titles plus your working profile."
+          : "Compare your working resume against current public job feeds and see the roles that repeat most often for your background. Nothing from your profile text is sent to the keyless feeds."}
         action={
           <div className="flex flex-wrap gap-2">
             <button
@@ -113,12 +119,12 @@ export default function TitleRecommendations({
             </button>
             <button
               className="btn-primary text-xs"
-              disabled={refreshing || !profileReady || usableSources.length === 0}
+              disabled={refreshing || !profileReady || (!staticMode && usableSources.length === 0)}
               onClick={() => void onRefresh()}
-              title={!profileReady ? "Import a resume first" : usableSources.length === 0 ? "Enable a source in Settings" : "Fetch current listings"}
+              title={!profileReady ? "Import a resume first" : !staticMode && usableSources.length === 0 ? "Enable a source in Settings" : staticMode ? "Rebuild from saved jobs" : "Fetch current listings"}
             >
               {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              {refreshing ? "Refreshing…" : "Refresh titles"}
+              {refreshing ? "Rebuilding…" : staticMode ? "Rebuild suggestions" : "Refresh titles"}
             </button>
           </div>
         }
@@ -151,11 +157,11 @@ export default function TitleRecommendations({
             <div className="mt-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.06] px-4 py-3 text-xs text-amber-100/80">
               <Clock3 className="h-4 w-4 shrink-0 text-amber-400" />
               <span className="flex-1">{data.status.staleReason}</span>
-              {profileReady && usableSources.length > 0 && (
+              {(profileReady && staticMode) || (profileReady && usableSources.length > 0) ? (
                 <button className="btn-ghost px-3 py-1.5 text-[11px]" onClick={() => void onRefresh()}>
-                  Refresh now
+                  {staticMode ? "Rebuild now" : "Refresh now"}
                 </button>
-              )}
+              ) : null}
             </div>
           )}
 
@@ -293,42 +299,53 @@ export default function TitleRecommendations({
             )}
           </Card>
 
-          <Card className="mt-5 p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+          {staticMode ? (
+            <Card className="mt-5 p-5">
               <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
-                <Compass className="h-4 w-4 text-accent-400" /> Sources
+                <Compass className="h-4 w-4 text-accent-400" /> Local-only suggestions
               </h2>
-              <button className="btn-ghost px-3 py-1.5 text-[11px]" onClick={onNavigateSettings}>
-                Configure sources
-              </button>
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {data.sources.map((source) => {
-                const live = source.enabled && source.configured;
-                const failed = failedSources.some((status) => status.source === source.id && !status.ok);
-                return (
-                  <a
-                    key={source.id}
-                    href={source.attributionUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    title={source.reason}
-                    className={`chip transition hover:border-white/25 ${
-                      live
-                        ? failed
-                          ? "border-amber-500/25 bg-amber-500/[0.06] text-amber-200/80"
-                          : "border-mint-500/20 bg-mint-500/[0.06] text-mint-400"
-                        : "border-white/[0.07] bg-white/[0.02] text-slate-500"
-                    }`}
-                  >
-                    {source.requiresKey ? <KeyRound className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}
-                    {source.label}
-                    <span className="opacity-60">{live ? (failed ? "partial" : "on") : "off"}</span>
-                  </a>
-                );
-              })}
-            </div>
-          </Card>
+              <p className="muted mt-2 text-xs">
+                No network requests are made in this build. Titles come from job descriptions saved in this browser and the profile you edit here. Use Settings to export a private JSON backup.
+              </p>
+            </Card>
+          ) : (
+            <Card className="mt-5 p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
+                  <Compass className="h-4 w-4 text-accent-400" /> Sources
+                </h2>
+                <button className="btn-ghost px-3 py-1.5 text-[11px]" onClick={onNavigateSettings}>
+                  Configure sources
+                </button>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {data.sources.map((source) => {
+                  const live = source.enabled && source.configured;
+                  const failed = failedSources.some((status) => status.source === source.id && !status.ok);
+                  return (
+                    <a
+                      key={source.id}
+                      href={source.attributionUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={source.reason}
+                      className={`chip transition hover:border-white/25 ${
+                        live
+                          ? failed
+                            ? "border-amber-500/25 bg-amber-500/[0.06] text-amber-200/80"
+                            : "border-mint-500/20 bg-mint-500/[0.06] text-mint-400"
+                          : "border-white/[0.07] bg-white/[0.02] text-slate-500"
+                      }`}
+                    >
+                      {source.requiresKey ? <KeyRound className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}
+                      {source.label}
+                      <span className="opacity-60">{live ? (failed ? "partial" : "on") : "off"}</span>
+                    </a>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
 
           {!profileReady ? (
             <div className="mt-6">
@@ -339,13 +356,22 @@ export default function TitleRecommendations({
                 action={<button className="btn-primary text-xs" onClick={onNavigateProfile}>Open Profile</button>}
               />
             </div>
-          ) : usableSources.length === 0 ? (
+          ) : !staticMode && usableSources.length === 0 ? (
             <div className="mt-6">
               <EmptyState
                 icon={<KeyRound className="h-6 w-6" />}
                 title="No job sources ready"
                 description="Enable a public feed or add an API key in Settings, then refresh. Greenhouse and Lever also need at least one company board token."
                 action={<button className="btn-primary text-xs" onClick={onNavigateSettings}>Open Settings</button>}
+              />
+            </div>
+          ) : staticMode && !data.totalListings ? (
+            <div className="mt-6">
+              <EmptyState
+                icon={<Search className="h-6 w-6" />}
+                title="No saved job descriptions"
+                description="Paste and save a job description first. This browser-only build derives title suggestions from those saved descriptions."
+                action={<button className="btn-primary text-xs" onClick={() => onNavigateJobs?.()}>Open Job descriptions</button>}
               />
             </div>
           ) : filtersActive && filteredRecommendations.length === 0 ? (
@@ -362,11 +388,15 @@ export default function TitleRecommendations({
               <EmptyState
                 icon={<Search className="h-6 w-6" />}
                 title="No matching titles yet"
-                description={data.totalListings ? "Listings were read, but none matched your profile strongly enough. Add more skills to your profile or try another source." : "Refresh to read current public listings, or add a source in Settings."}
+                description={staticMode
+                  ? "Saved jobs were read, but none matched your profile strongly enough. Add more skills to your working profile or save another job description."
+                  : data.totalListings
+                    ? "Listings were read, but none matched your profile strongly enough. Add more skills to your profile or try another source."
+                    : "Refresh to read current public listings, or add a source in Settings."}
                 action={
                   <div className="flex gap-2">
-                    <button className="btn-primary text-xs" disabled={refreshing} onClick={() => void onRefresh()}>Refresh titles</button>
-                    <button className="btn-ghost text-xs" onClick={onNavigateSettings}>Settings</button>
+                    <button className="btn-primary text-xs" disabled={refreshing || !profileReady} onClick={() => void onRefresh()}>{staticMode ? "Rebuild suggestions" : "Refresh titles"}</button>
+                    <button className="btn-ghost text-xs" onClick={staticMode ? () => onNavigateJobs?.() : onNavigateSettings}>{staticMode ? "Job descriptions" : "Settings"}</button>
                   </div>
                 }
               />
@@ -374,13 +404,15 @@ export default function TitleRecommendations({
           ) : (
             <div className="mt-6 space-y-4">
               {filteredRecommendations.map((item, index) => (
-                <RecommendationCard key={item.normalizedTitle} item={item} rank={index + 1} data={data} />
+                <RecommendationCard key={item.normalizedTitle} item={item} rank={index + 1} data={data} staticMode={staticMode} />
               ))}
             </div>
           )}
 
           <p className="mt-8 text-[11px] leading-relaxed text-slate-500">
-            Job data is credited to each source above and linked directly to the original listing. Listings are cached locally for 24 hours and only compact metadata (title, company, location, link, source, date) is stored.
+            {staticMode
+              ? "Everything in this build stays in this browser. Nothing is fetched from a job source; suggestions are rebuilt from your saved descriptions whenever you ask."
+              : "Job data is credited to each source above and linked directly to the original listing. Listings are cached locally for 24 hours and only compact metadata (title, company, location, link, source, date) is stored."}
           </p>
         </>
       )}
@@ -388,7 +420,7 @@ export default function TitleRecommendations({
   );
 }
 
-function RecommendationCard({ item, rank, data }: { item: TitleRecommendation; rank: number; data: TitlesPayload }) {
+function RecommendationCard({ item, rank, data, staticMode = false }: { item: TitleRecommendation; rank: number; data: TitlesPayload; staticMode?: boolean }) {
   return (
     <Card className="p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -421,34 +453,36 @@ function RecommendationCard({ item, rank, data }: { item: TitleRecommendation; r
       </div>
 
       <div className="mt-5 grid gap-2 border-t border-white/[0.06] pt-4 md:grid-cols-2">
-        {item.samples.map((listing) => (
-          <a
-            key={listing.id}
-            href={listing.url}
-            target="_blank"
-            rel="noreferrer"
-            className="group flex min-w-0 items-start justify-between gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-3 transition hover:border-accent-500/25 hover:bg-accent-500/[0.04]"
-          >
-            <div className="min-w-0">
-              <p className="truncate text-xs font-medium text-slate-200 group-hover:text-white">{listing.title}</p>
-              <p className="mt-1 truncate text-[11px] text-slate-500">
-                {listing.company}{listing.location ? ` · ${listing.location}` : ""}
-              </p>
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] uppercase tracking-wider text-slate-600">
-                <span>{sourceLabel(data, listing.source)} · {listing.matchScore.toFixed(1)} match</span>
-                {listing.seniority !== "unknown" && (
-                  <span className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 text-slate-400">
-                    {SENIORITY_LABELS[listing.seniority]}
-                  </span>
-                )}
-                {listing.salaryText && (
-                  <span className="normal-case tracking-normal text-slate-400">{listing.salaryText}</span>
-                )}
+        {item.samples.map((listing) => {
+          const content = (
+            <>
+              <div className="min-w-0">
+                <p className="truncate text-xs font-medium text-slate-200 group-hover:text-white">{listing.title}</p>
+                <p className="mt-1 truncate text-[11px] text-slate-500">
+                  {listing.company}{listing.location ? ` · ${listing.location}` : ""}
+                </p>
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] uppercase tracking-wider text-slate-600">
+                  <span>{sourceLabel(data, listing.source)} · {listing.matchScore.toFixed(1)} match</span>
+                  {listing.seniority !== "unknown" && (
+                    <span className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 text-slate-400">
+                      {SENIORITY_LABELS[listing.seniority]}
+                    </span>
+                  )}
+                  {listing.salaryText && (
+                    <span className="normal-case tracking-normal text-slate-400">{listing.salaryText}</span>
+                  )}
+                </div>
               </div>
-            </div>
-            <ArrowUpRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-600 group-hover:text-accent-400" />
-          </a>
-        ))}
+              {!staticMode && <ArrowUpRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-600 group-hover:text-accent-400" />}
+            </>
+          );
+          const className = "group flex min-w-0 items-start justify-between gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-3 transition hover:border-accent-500/25 hover:bg-accent-500/[0.04]";
+          return staticMode ? (
+            <div key={listing.id} className={className}>{content}</div>
+          ) : (
+            <a key={listing.id} href={listing.url} target="_blank" rel="noreferrer" className={className}>{content}</a>
+          );
+        })}
       </div>
     </Card>
   );
