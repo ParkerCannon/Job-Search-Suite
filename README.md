@@ -43,6 +43,8 @@ npm run build
 npm start
 ```
 
+Both `npm run dev` and `npm start` go through the launcher, so they use the same 3000–3010 port fallback. Use `npm run dev:direct` or `npm run start:direct` only when you intentionally want to bypass the launcher.
+
 ## Run without Node
 
 ### Single-file browser app

@@ -217,12 +217,17 @@ function responds(port, timeoutMs = 1200) {
   });
 }
 
-function portHasListener(port) {
+async function portHasListener(port) {
+  // Test binds are unreliable on Windows: SO_REUSEADDR can let a second socket
+  // bind 127.0.0.1 while Next.js still fails on :::port. Ask the OS for actual
+  // listeners first, then fall back to an exclusive bind where available.
+  if (pidsListeningOn(port).length > 0) return true;
+
   return new Promise((resolve) => {
     const server = net.createServer();
     server.once("error", () => resolve(true));
     server.once("listening", () => server.close(() => resolve(false)));
-    server.listen(port, "127.0.0.1");
+    server.listen({ port, host: "127.0.0.1", exclusive: true });
   });
 }
 
@@ -340,7 +345,7 @@ async function runCheck() {
   console.log("Environment check passed.");
 }
 
-async function runLaunch() {
+async function runLaunch(serverMode = "dev") {
   if (await responds(portStart)) {
     const url = `http://localhost:${portStart}`;
     console.log(`Job Search Suite is already running at ${url}`);
@@ -359,13 +364,14 @@ async function runLaunch() {
     port = fallback;
   }
 
-  clearStaleBuild();
+  if (serverMode === "dev") clearStaleBuild();
 
   const url = `http://localhost:${port}`;
   console.log(`Starting the local server at ${url}`);
   console.log("Keep this window open while you use the app.");
 
-  const child = spawn(npmCmd, ["run", "dev", "--", "--port", String(port)], {
+  const scriptName = serverMode === "start" ? "start:direct" : "dev:direct";
+  const child = spawn(npmCmd, ["run", scriptName, "--", "--port", String(port)], {
     cwd: projectRoot,
     shell: isWindows,
     stdio: "inherit",
@@ -413,7 +419,7 @@ async function main() {
     clearStaleBuild();
   }
 
-  await runLaunch();
+  await runLaunch(mode === "start" ? "start" : "dev");
 }
 
 main().catch((error) => {
