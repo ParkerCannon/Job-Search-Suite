@@ -9,29 +9,89 @@ import {
   Eye,
   FileSearch,
   Info,
+  Linkedin,
   Loader2,
   Play,
   Sparkles,
   Trash2,
   XCircle,
 } from "lucide-react";
-import type { AtsAnalysisRecord, AtsResult, JobDescription, ProfileSource, StoredProfile } from "@/lib/types";
+import type {
+  AppSettings,
+  AtsAnalysisRecord,
+  AtsResult,
+  JobDescription,
+  LinkedInExportSnapshot,
+  ProfileSource,
+  StoredProfile,
+} from "@/lib/types";
 import { Card, EmptyState, SectionHeader } from "./ui";
+import LinkedInDashboard from "./LinkedInDashboard";
 
 type Props = {
   jobs: JobDescription[];
   analyses: AtsAnalysisRecord[];
   profiles: Record<string, StoredProfile | null>;
+  settings: AppSettings;
+  linkedin: LinkedInExportSnapshot | null;
   busy: string | null;
   onAnalyze: (jobId: string, source: ProfileSource) => Promise<void>;
   onDeleteAnalysis: (id: string) => Promise<void>;
   onClearAnalyses: () => Promise<void>;
   onNavigateJobs: () => void;
+  onNavigateProfile: () => void;
+  onImportProfile: (files: File[], text: string) => Promise<void>;
+  onClearLinkedIn: () => Promise<void>;
+  onApplyIntent: (settings: AppSettings) => Promise<void>;
 };
 
-export default function AtsPanel({ jobs, analyses, profiles, busy, onAnalyze, onDeleteAnalysis, onClearAnalyses, onNavigateJobs }: Props) {
+export default function AtsPanel(props: Props) {
+  const [view, setView] = useState<"analysis" | "linkedin">("analysis");
+  const isDashboard = view === "linkedin";
+
+  return (
+    <>
+      <SectionHeader
+        eyebrow="ATS check"
+        title={isDashboard ? "LinkedIn Dashboard" : "See what the parser sees"}
+        description={isDashboard
+          ? "Explore every CSV in your LinkedIn export, with local-only insights for job search intent, network, learning, and profile evidence."
+          : "A transparent, explainable diagnostic: keyword coverage, hard skills, experience alignment, structure, and quantified impact."}
+      />
+      <div className="mb-6 flex flex-wrap gap-2">
+        <button
+          onClick={() => setView("analysis")}
+          className={`btn border text-xs ${!isDashboard ? "border-accent-500/40 bg-accent-500/10 text-accent-400" : "border-white/10 bg-white/[0.02] text-slate-400 hover:text-white"}`}
+        >
+          <FileSearch className="h-3.5 w-3.5" /> Score & keywords
+        </button>
+        <button
+          onClick={() => setView("linkedin")}
+          className={`btn border text-xs ${isDashboard ? "border-accent-500/40 bg-accent-500/10 text-accent-400" : "border-white/10 bg-white/[0.02] text-slate-400 hover:text-white"}`}
+        >
+          <Linkedin className="h-3.5 w-3.5" /> LinkedIn Dashboard
+        </button>
+      </div>
+      {isDashboard ? (
+        <LinkedInDashboard
+          linkedin={props.linkedin}
+          settings={props.settings}
+          busy={props.busy}
+          onImport={props.onImportProfile}
+          onClear={props.onClearLinkedIn}
+          onApplyIntent={props.onApplyIntent}
+          onNavigateProfile={props.onNavigateProfile}
+        />
+      ) : (
+        <AnalysisView {...props} />
+      )}
+    </>
+  );
+}
+
+function AnalysisView({ jobs, analyses, profiles, busy, onAnalyze, onDeleteAnalysis, onClearAnalyses, onNavigateJobs }: Props) {
   const [jobId, setJobId] = useState("");
-  const [source, setSource] = useState<ProfileSource>("active");
+  const [source, setSource] = useState<ProfileSource>(() => (profiles.active ? "active" : "imported"));
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const selected = useMemo(
@@ -41,26 +101,17 @@ export default function AtsPanel({ jobs, analyses, profiles, busy, onAnalyze, on
 
   if (jobs.length === 0) {
     return (
-      <>
-        <SectionHeader eyebrow="ATS check" title="Score your resume" description="Choose a job description to compare your profile against." />
-        <EmptyState
-          icon={<FileSearch className="h-5 w-5" />}
-          title="Add a job description first"
-          description="ATS scoring needs a target role so it can identify keywords, skills, and experience gaps."
-          action={<button className="btn-primary" onClick={onNavigateJobs}>Add a job description</button>}
-        />
-      </>
+      <EmptyState
+        icon={<FileSearch className="h-5 w-5" />}
+        title="Add a job description first"
+        description="ATS scoring needs a target role so it can identify keywords, skills, and experience gaps. Open the LinkedIn Dashboard tab to explore your exported data without a job description."
+        action={<button className="btn-primary" onClick={onNavigateJobs}>Add a job description</button>}
+      />
     );
   }
 
   return (
     <>
-      <SectionHeader
-        eyebrow="ATS check"
-        title="See what the parser sees"
-        description="A transparent, explainable diagnostic: keyword coverage, hard skills, experience alignment, structure, and quantified impact."
-      />
-
       <Card className="mb-6 flex flex-wrap items-end gap-4 p-5">
         <div className="min-w-[220px] flex-1">
           <label className="label">Job description</label>
@@ -74,8 +125,7 @@ export default function AtsPanel({ jobs, analyses, profiles, busy, onAnalyze, on
           <label className="label">Profile to check</label>
           <select className="input" value={source} onChange={(e) => setSource(e.target.value as ProfileSource)}>
             <option value="active" disabled={!profiles.active}>Working profile</option>
-            <option value="resume" disabled={!profiles.resume}>Original resume</option>
-            <option value="linkedin" disabled={!profiles.linkedin}>LinkedIn profile</option>
+            <option value="imported" disabled={!profiles.imported}>Imported snapshot</option>
           </select>
         </div>
         <button
@@ -289,7 +339,12 @@ function ScoreCard({ result }: { result: AtsResult }) {
 }
 
 function SourceCard({ result }: { result: AtsResult }) {
-  const labels: Record<ProfileSource, string> = { active: "Working profile", resume: "Original resume", linkedin: "LinkedIn profile" };
+  const labels: Record<ProfileSource, string> = {
+    active: "Working profile",
+    imported: "Imported snapshot",
+    resume: "Legacy resume",
+    linkedin: "Legacy LinkedIn",
+  };
   return (
     <Card className="p-5">
       <p className="label">Analyzed profile</p>

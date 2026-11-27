@@ -3,7 +3,9 @@ import type {
   AtsAnalysisRecord,
   JobDescription,
   KeywordAnalysis,
+  LinkedInExportSnapshot,
   Profile,
+  ProfileImportPreview,
   ProfileSource,
   TitlesPayload,
 } from "@/lib/types";
@@ -20,12 +22,13 @@ export const serverStore: AppStore = {
   mode: "server",
 
   async loadAll(): Promise<AppSnapshot> {
-    const [profiles, jobs, analyses, settings, titles] = await Promise.all([
+    const [profiles, jobs, analyses, settings, titles, linkedin] = await Promise.all([
       fetch("/api/profile").then((r) => r.json()),
       fetch("/api/jobs").then((r) => r.json()),
       fetch("/api/analyses").then((r) => r.json()),
       fetch("/api/settings").then((r) => r.json()),
       fetch("/api/titles").then((r) => r.json()),
+      fetch("/api/linkedin").then((r) => r.json()),
     ]);
     return {
       profiles,
@@ -33,14 +36,18 @@ export const serverStore: AppStore = {
       analyses: analyses.analyses ?? [],
       settings: settings.settings,
       titles: titles as TitlesPayload,
+      linkedin: (linkedin.linkedin as LinkedInExportSnapshot | null) ?? null,
     };
   },
 
-  async importProfile(source, file, text) {
+  async importProfile(files, text): Promise<ProfileImportPreview> {
     const form = new FormData();
-    if (file) form.append("file", file);
+    for (const file of files) form.append("file", file);
     if (text.trim()) form.append("text", text);
-    await readJson(fetch(`/api/parse/${source}`, { method: "POST", body: form }));
+    const data = await readJson<{ preview: ProfileImportPreview }>(
+      fetch("/api/parse/profile", { method: "POST", body: form }),
+    );
+    return data.preview;
   },
 
   async saveActiveProfile(profile) {
@@ -61,6 +68,10 @@ export const serverStore: AppStore = {
         body: JSON.stringify({ resetFrom: source }),
       }),
     );
+  },
+
+  async clearLinkedInExport() {
+    await fetch("/api/linkedin", { method: "DELETE" });
   },
 
   async addJob(title, company, rawText) {

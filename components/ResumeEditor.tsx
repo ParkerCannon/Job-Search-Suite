@@ -65,14 +65,9 @@ export default function ResumeEditor({ profile, onChange, onReset, profiles, bus
           </div>
           {onReset && profiles && (
             <div className="flex flex-wrap gap-2">
-              {profiles.resume && (
-                <button className="btn-ghost text-[11px]" disabled={busy === "reset"} onClick={() => void onReset("resume")}>
-                  <FileText className="h-3.5 w-3.5" /> Reset from resume
-                </button>
-              )}
-              {profiles.linkedin && (
-                <button className="btn-ghost text-[11px]" disabled={busy === "reset"} onClick={() => void onReset("linkedin")}>
-                  <RotateCcw className="h-3.5 w-3.5" /> Reset from LinkedIn
+              {profiles.imported && (
+                <button className="btn-ghost text-[11px]" disabled={busy === "reset"} onClick={() => void onReset("imported")}>
+                  <RotateCcw className="h-3.5 w-3.5" /> Reset from imported snapshot
                 </button>
               )}
             </div>

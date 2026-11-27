@@ -2,7 +2,9 @@ import { aiRecommendations } from "@/lib/ai";
 import { analyzeResume, profileToText } from "@/lib/ats/analyze";
 import { buildRecommendations as buildAtsRecommendations } from "@/lib/ats/recommend";
 import { normalizeJobDiscoverySettings } from "@/lib/jobs/sourceInfo";
+import { buildProfileImport } from "@/lib/parse/linkedinBundle";
 import { extractTextFromFileBrowser } from "./files.browser";
+import { clearLinkedInSnapshot, getLinkedInSnapshot, saveLinkedInSnapshot } from "./linkedinDb";
 import { buildLocalTitles } from "./localTitles";
 import {
   DEFAULT_APP_SETTINGS,
@@ -15,14 +17,16 @@ import {
   type AtsResult,
   type JobDescription,
   type KeywordAnalysis,
+  type LinkedInExportSnapshot,
   type Profile,
+  type ProfileImportPreview,
   type ProfileSource,
   type StoredProfile,
 } from "@/lib/types";
 import type { AppSnapshot, AppStore } from "./contract";
 
 const STORAGE_KEY = "job-search-suite:v1";
-const PROFILE_SOURCES: ProfileSource[] = ["resume", "linkedin", "active"];
+const PROFILE_SOURCES: ProfileSource[] = ["active", "imported", "resume", "linkedin"];
 
 type LocalState = {
   profiles: Record<string, StoredProfile | null>;
@@ -48,7 +52,7 @@ function asText(value: unknown): string {
 
 function emptyState(): LocalState {
   return {
-    profiles: { resume: null, linkedin: null, active: null },
+    profiles: { active: null, imported: null, resume: null, linkedin: null },
     jobs: [],
     analyses: [],
     settings: DEFAULT_APP_SETTINGS,
@@ -131,6 +135,13 @@ function normalizeState(value: unknown): LocalState {
   for (const source of PROFILE_SOURCES) {
     profiles[source] = readStoredProfile(rawProfiles[source], source);
   }
+  if (!profiles.imported) {
+    const legacy = profiles.resume ?? profiles.linkedin ?? profiles.active;
+    if (legacy) profiles.imported = { ...legacy, source: "imported" };
+  }
+  if (!profiles.active && profiles.imported) {
+    profiles.active = { ...profiles.imported, source: "active" };
+  }
   const jobs = (Array.isArray(input.jobs) ? input.jobs : [])
     .filter(isRecord)
     .map((job) => ({
@@ -195,6 +206,7 @@ class LocalStore implements AppStore {
   private currentProfile(): Profile | null {
     return (
       this.profile("active")?.profile ??
+      this.profile("imported")?.profile ??
       this.profile("resume")?.profile ??
       this.profile("linkedin")?.profile ??
       null
@@ -208,41 +220,39 @@ class LocalStore implements AppStore {
 
   async loadAll(): Promise<AppSnapshot> {
     const state = this.load();
+    const linkedin = await getLinkedInSnapshot().catch(() => null);
     return {
       profiles: state.profiles,
       jobs: state.jobs,
       analyses: state.analyses,
       settings: this.settings(),
       titles: this.titles(),
+      linkedin,
     };
   }
 
-  async importProfile(source: "resume" | "linkedin", file: File | null, text: string): Promise<void> {
-    let rawText = text.trim();
-    let filename = source === "resume" ? "Pasted resume" : "Pasted LinkedIn profile";
-    if (file && file.size > 0) {
-      rawText = await extractTextFromFileBrowser(file);
-      filename = file.name;
-    }
-    if (!rawText.trim()) throw new Error("No text was provided.");
-
-    const { parseResumeText } = await import("@/lib/parse/resume");
-    const { parseLinkedInText } = await import("@/lib/parse/linkedin");
-    const profile = source === "resume" ? parseResumeText(rawText) : parseLinkedInText(rawText);
-    const record: StoredProfile = {
-      source,
-      profile: normalizeProfile(profile),
-      rawText,
-      filename,
-      updatedAt: new Date().toISOString(),
-    };
+  async importProfile(files: File[], text: string): Promise<ProfileImportPreview> {
+    const preview = await buildProfileImport(files, text, (file) => extractTextFromFileBrowser(file as File));
+    const now = new Date().toISOString();
     const state = this.load();
-    state.profiles[source] = record;
-    if (!state.profiles.active) {
-      state.profiles.active = { ...record, source: "active" };
-    }
+    state.profiles.imported = {
+      source: "imported",
+      profile: preview.imported,
+      rawText: preview.rawText,
+      filename: preview.filename,
+      updatedAt: now,
+    };
+    state.profiles.active = {
+      source: "active",
+      profile: preview.profile,
+      rawText: preview.rawText,
+      filename: preview.filename,
+      updatedAt: now,
+    };
     state.titleRefreshedAt = null;
     this.persist();
+    await saveLinkedInSnapshot(preview.linkedin);
+    return preview;
   }
 
   async saveActiveProfile(profile: Profile): Promise<void> {
@@ -266,6 +276,10 @@ class LocalStore implements AppStore {
     state.profiles.active = { ...stored, source: "active" };
     state.titleRefreshedAt = null;
     this.persist();
+  }
+
+  async clearLinkedInExport(): Promise<void> {
+    await clearLinkedInSnapshot();
   }
 
   async addJob(title: string, company: string, rawText: string): Promise<JobDescription> {
@@ -325,7 +339,7 @@ class LocalStore implements AppStore {
   private storedForAnalysis(source: ProfileSource): StoredProfile {
     const stored = this.profile(source);
     if (!stored || !stored.profile.name && !stored.profile.summary && !stored.profile.experience.length) {
-      throw new Error(`No ${source} profile data found. Import a resume or LinkedIn profile first.`);
+      throw new Error(`No ${source} profile data found. Import your profile data first.`);
     }
     return stored;
   }
@@ -393,15 +407,17 @@ class LocalStore implements AppStore {
     return this.settings();
   }
 
-  exportBackup(): string {
+  async exportBackup(): Promise<string> {
     const state = this.load();
+    const linkedin = await getLinkedInSnapshot().catch(() => null);
     return JSON.stringify(
       {
         format: "job-search-suite-backup",
-        version: 1,
+        version: 2,
         exportedAt: new Date().toISOString(),
-        note: "Private data. API keys are never included; enter them again after restoring.",
+        note: "Private data. Includes LinkedIn CSV rows when present; API keys are never included.",
         ...state,
+        linkedin,
         settings: withoutSecrets(state.settings),
       },
       null,
@@ -422,10 +438,14 @@ class LocalStore implements AppStore {
     this.secrets = readSecrets(readSettings(parsed.settings));
     this.state = normalizeState(parsed);
     this.persist();
+    const linkedin = (parsed as Record<string, unknown>).linkedin as LinkedInExportSnapshot | null | undefined;
+    if (linkedin && isRecord(linkedin)) await saveLinkedInSnapshot(linkedin);
+    else await clearLinkedInSnapshot();
   }
 
   async clearLocalData(): Promise<void> {
     window.localStorage.removeItem(STORAGE_KEY);
+    await clearLinkedInSnapshot();
     this.state = emptyState();
     this.secrets = readSecrets(DEFAULT_APP_SETTINGS);
   }

@@ -61,7 +61,7 @@ export function buildLocalTitles(
   settings: AppSettings = DEFAULT_APP_SETTINGS,
   lastRefreshedAt: string | null = null,
 ): TitlesPayload {
-  const signals = buildProfileSignals(profile ?? emptyProfile(), settings.targetRole);
+  const signals = buildProfileSignals(profile ?? emptyProfile(), settings.targetRole, settings.jobDiscovery.searchKeywords);
   const listings = dedupeListings(scoreListings(jobs.map(toListing), signals, settings.jobDiscovery));
   const hasProfile = Boolean(
     profile?.name || profile?.experience.length || profile?.skills.some((group) => group.items.length),

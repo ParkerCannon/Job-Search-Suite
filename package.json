@@ -34,7 +34,9 @@
       "!node_modules/**"
     ],
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "artifactName": "Job-Search-Suite-Setup-${version}.${ext}",
       "signAndEditExecutable": false
     },
@@ -43,20 +45,26 @@
       "allowToChangeInstallationDirectory": true
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "artifactName": "Job-Search-Suite-${version}.${ext}"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "artifactName": "Job-Search-Suite-${version}.${ext}"
     },
     "publish": null
   },
   "dependencies": {
     "jspdf": "^4.2.1",
+    "jszip": "^3.10.2",
     "lucide-react": "^0.468.0",
     "mammoth": "^1.8.0",
     "next": "^15.1.0",
+    "papaparse": "^5.7.1",
     "pdfjs-dist": "^4.10.38",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -64,6 +72,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/papaparse": "^5.5.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/sql.js": "^1.16.1",

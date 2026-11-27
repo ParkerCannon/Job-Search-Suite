@@ -7,7 +7,7 @@ export async function extractTextFromFileBrowser(file: File): Promise<string> {
   const ext = extensionOf(file.name);
   const buffer = await file.arrayBuffer();
 
-  if (ext === "txt" || ext === "md" || ext === "json" || file.type.startsWith("text/")) {
+  if (ext === "txt" || ext === "md" || ext === "json" || file.type?.startsWith("text/")) {
     return new TextDecoder("utf-8").decode(buffer);
   }
 

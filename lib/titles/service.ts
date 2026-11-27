@@ -94,7 +94,7 @@ async function buildPayload(
 export async function getTitlesPayload(): Promise<TitlesPayload> {
   const settings = await getSettings();
   const profile = await profileForDiscovery(settings);
-  const signals = buildProfileSignals(profile ?? emptyProfile(), settings.targetRole);
+  const signals = buildProfileSignals(profile ?? emptyProfile(), settings.targetRole, settings.jobDiscovery.searchKeywords);
   const fingerprint = createFingerprint(signals, settings);
   const stored = await getTitleRefreshState();
   return buildPayload(await listScrapedJobs(), settings, stored, fingerprint);
@@ -104,7 +104,7 @@ async function runRefresh(): Promise<TitlesPayload> {
   const settings = await getSettings();
   const profile = await profileForDiscovery(settings);
   const previous = await getTitleRefreshState();
-  const emptySignals = buildProfileSignals(emptyProfile(), settings.targetRole);
+  const emptySignals = buildProfileSignals(emptyProfile(), settings.targetRole, settings.jobDiscovery.searchKeywords);
 
   if (!profile || !profile.name && !profile.experience.length && !flattenSkillGroups(profile.skills).length) {
     const state: TitleRefreshStatus = {
@@ -119,7 +119,7 @@ async function runRefresh(): Promise<TitlesPayload> {
     return buildPayload(await listScrapedJobs(), settings, state, createFingerprint(emptySignals, settings));
   }
 
-  const signals = buildProfileSignals(profile, settings.targetRole);
+  const signals = buildProfileSignals(profile, settings.targetRole, settings.jobDiscovery.searchKeywords);
   const fingerprint = createFingerprint(signals, settings);
   if (!signals.terms.length) {
     const state: TitleRefreshStatus = {

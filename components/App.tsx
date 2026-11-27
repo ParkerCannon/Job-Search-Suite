@@ -17,7 +17,9 @@ import type {
   AppSettings,
   JobDescription,
   KeywordAnalysis,
+  LinkedInExportSnapshot,
   Profile,
+  ProfileImportPreview,
   ProfileSource,
   StoredProfile,
   TitlesPayload,
@@ -35,10 +37,10 @@ type Section = "overview" | "profile" | "jobs" | "titles" | "ats" | "settings";
 
 const NAV: { id: Section; label: string; icon: typeof LayoutDashboard; hint: string }[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard, hint: "Your workspace" },
-  { id: "profile", label: "Profile", icon: FileText, hint: "Resume & LinkedIn" },
+  { id: "profile", label: "Profile", icon: FileText, hint: "Working profile" },
   { id: "jobs", label: "Job descriptions", icon: BriefcaseBusiness, hint: "Paste & analyze" },
   { id: "titles", label: "Job titles", icon: Search, hint: "Discover target roles" },
-  { id: "ats", label: "ATS check", icon: ScanSearch, hint: "Score & gaps" },
+  { id: "ats", label: "ATS check", icon: ScanSearch, hint: "Score + LinkedIn" },
   { id: "settings", label: "Settings", icon: SettingsIcon, hint: "AI & sources" },
 ];
 
@@ -49,6 +51,7 @@ export default function App({ store = serverStore }: { store?: AppStore }) {
   const [analyses, setAnalyses] = useState<AtsAnalysisRecord[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [titles, setTitles] = useState<TitlesPayload | null>(null);
+  const [linkedin, setLinkedin] = useState<LinkedInExportSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
@@ -71,6 +74,7 @@ export default function App({ store = serverStore }: { store?: AppStore }) {
       setAnalyses(snapshot.analyses);
       setSettings(snapshot.settings);
       setTitles(snapshot.titles);
+      setLinkedin(snapshot.linkedin);
     } catch (error) {
       notify(error instanceof Error ? error.message : "Could not load local data.", true);
     } finally {
@@ -82,18 +86,37 @@ export default function App({ store = serverStore }: { store?: AppStore }) {
     void loadAll();
   }, [loadAll]);
 
-  async function importProfile(source: "resume" | "linkedin", file: File | null, text: string) {
-    setBusy(source);
+  async function importProfile(files: File[], text: string): Promise<ProfileImportPreview | null> {
+    setBusy("profile");
     try {
-      await store.importProfile(source, file, text);
+      const preview = await store.importProfile(files, text);
       await loadAll();
-      notify(source === "resume" ? "Resume imported and parsed." : "LinkedIn profile imported.");
-      setSection("profile");
+      const counts = Object.values(preview.summary.detected).reduce((sum, value) => sum + value, 0);
+      notify(`Profile imported. ${counts.toLocaleString()} LinkedIn rows parsed.`);
+      return preview;
     } catch (error) {
       notify(error instanceof Error ? error.message : "Import failed.", true);
+      return null;
     } finally {
       setBusy(null);
     }
+  }
+
+  async function clearLinkedInExport() {
+    setBusy("linkedin-clear");
+    try {
+      await store.clearLinkedInExport();
+      await loadAll();
+      notify("Stored LinkedIn export deleted.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Could not clear LinkedIn data.", true);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function applyIntent(next: AppSettings) {
+    await saveAppSettings(next);
   }
 
   async function saveActiveProfile(profile: Profile) {
@@ -293,9 +316,9 @@ export default function App({ store = serverStore }: { store?: AppStore }) {
         <div className="mt-auto rounded-xl border border-white/[0.07] bg-white/[0.02] p-3.5">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Status</p>
           <div className="mt-2.5 space-y-2 text-xs">
-            <StatusRow ok={Boolean(profiles.resume)} label="Resume" />
-            <StatusRow ok={Boolean(profiles.linkedin)} label="LinkedIn" />
             <StatusRow ok={profileReady} label="Working profile" />
+            <StatusRow ok={Boolean(profiles.imported)} label="Imported snapshot" />
+            <StatusRow ok={Boolean(linkedin)} label={`LinkedIn CSVs (${linkedin?.tableCount ?? 0})`} />
             <StatusRow ok={jobs.length > 0} label={`Job descriptions (${jobs.length})`} />
             <StatusRow ok={Boolean(titles?.totalListings)} label={`Cached listings (${titles?.totalListings ?? 0})`} />
           </div>
@@ -336,8 +359,9 @@ export default function App({ store = serverStore }: { store?: AppStore }) {
                   jobs={jobs}
                   analyses={analyses}
                   settings={settings}
+                  linkedin={linkedin}
                   busy={busy}
-                  onImport={importProfile}
+                  onImport={async (files, text) => { await importProfile(files, text); }}
                   onNavigate={setSection}
                 />
               )}
@@ -347,7 +371,6 @@ export default function App({ store = serverStore }: { store?: AppStore }) {
                   busy={busy}
                   onSave={saveActiveProfile}
                   onReset={resetProfile}
-                  onImport={importProfile}
                 />
               )}
               {section === "jobs" && (
@@ -387,11 +410,17 @@ export default function App({ store = serverStore }: { store?: AppStore }) {
                   jobs={jobs}
                   analyses={analyses}
                   profiles={profiles}
+                  settings={settings}
+                  linkedin={linkedin}
                   busy={busy}
                   onAnalyze={runAnalysis}
                   onDeleteAnalysis={removeAnalysis}
                   onClearAnalyses={clearAnalyses}
                   onNavigateJobs={() => setSection("jobs")}
+                  onNavigateProfile={() => setSection("profile")}
+                  onImportProfile={async (files, text) => { await importProfile(files, text); }}
+                  onClearLinkedIn={clearLinkedInExport}
+                  onApplyIntent={applyIntent}
                 />
               )}
               {section === "settings" && (
@@ -404,7 +433,7 @@ export default function App({ store = serverStore }: { store?: AppStore }) {
                   onExportBackup={
                     store.exportBackup
                       ? async () => {
-                          const json = store.exportBackup!();
+                          const json = await store.exportBackup!();
                           const blob = new Blob([json], { type: "application/json" });
                           const url = URL.createObjectURL(blob);
                           const link = document.createElement("a");

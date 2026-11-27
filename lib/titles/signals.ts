@@ -49,7 +49,7 @@ function addTerm(counts: Map<string, number>, term: string, weight: number, pers
   }
 }
 
-export function buildProfileSignals(profile: Profile, targetRole: string): ProfileSignals {
+export function buildProfileSignals(profile: Profile, targetRole: string, searchKeywords: string[] = []): ProfileSignals {
   const counts = new Map<string, number>();
   const titleCounts = new Map<string, number>();
   const skillTerms = new Set<string>();
@@ -77,6 +77,9 @@ export function buildProfileSignals(profile: Profile, targetRole: string): Profi
   if (targetRole.trim()) {
     addTitle(targetRole, 8);
     addTerm(counts, targetRole, 6, personalTokens);
+  }
+  for (const keyword of searchKeywords.slice(0, 30)) {
+    addTerm(counts, keyword, 2.5, personalTokens);
   }
   addTitle(profile.headline, 3.5);
   addText(profile.summary, 0.8);

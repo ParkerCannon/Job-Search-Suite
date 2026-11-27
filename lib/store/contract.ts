@@ -3,7 +3,9 @@ import type {
   AtsAnalysisRecord,
   JobDescription,
   KeywordAnalysis,
+  LinkedInExportSnapshot,
   Profile,
+  ProfileImportPreview,
   ProfileSource,
   StoredProfile,
   TitlesPayload,
@@ -15,14 +17,16 @@ export type AppSnapshot = {
   analyses: AtsAnalysisRecord[];
   settings: AppSettings;
   titles: TitlesPayload;
+  linkedin: LinkedInExportSnapshot | null;
 };
 
 export interface AppStore {
   readonly mode: "server" | "local";
   loadAll(): Promise<AppSnapshot>;
-  importProfile(source: "resume" | "linkedin", file: File | null, text: string): Promise<void>;
+  importProfile(files: File[], text: string): Promise<ProfileImportPreview>;
   saveActiveProfile(profile: Profile): Promise<void>;
   resetProfile(source: ProfileSource): Promise<void>;
+  clearLinkedInExport(): Promise<void>;
   addJob(title: string, company: string, rawText: string): Promise<JobDescription>;
   removeJob(id: string): Promise<void>;
   clearJobs(): Promise<void>;
@@ -33,7 +37,7 @@ export interface AppStore {
   runAnalysis(jobId: string, source: ProfileSource): Promise<AtsAnalysisRecord>;
   analyzeKeywords(rawText: string, source: ProfileSource): Promise<KeywordAnalysis>;
   saveSettings(next: AppSettings): Promise<AppSettings>;
-  exportBackup?(): string;
+  exportBackup?(): Promise<string> | string;
   importBackup?(json: string): Promise<void>;
   clearLocalData?(): Promise<void>;
 }

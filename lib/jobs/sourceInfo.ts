@@ -90,6 +90,7 @@ export function normalizeJobDiscoverySettings(value: unknown): JobDiscoverySetti
     greenhouseBoards: stringList(source.greenhouseBoards),
     leverBoards: stringList(source.leverBoards),
     locationTerms: stringList(source.locationTerms, 15),
+    searchKeywords: stringList(source.searchKeywords, 30),
     maxJobsPerSource: Number.isFinite(maxJobs)
       ? Math.min(200, Math.max(20, Math.round(maxJobs)))
       : DEFAULT_JOB_DISCOVERY_SETTINGS.maxJobsPerSource,

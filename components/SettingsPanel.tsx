@@ -201,6 +201,18 @@ export default function SettingsPanel({ settings, busy, onSave, staticMode = fal
           />
           <p className="mt-1 text-[11px] text-slate-500">A target role gives the title ranking a strong signal, even if your resume uses different wording.</p>
         </div>
+        <div className="mt-5 max-w-xl">
+          <label className="label">Search keywords for title discovery (optional)</label>
+          <input
+            className="input"
+            value={discovery.searchKeywords.join(", ")}
+            onChange={(e) => setDiscovery({ searchKeywords: parseList(e.target.value) })}
+            placeholder="production, coordinator, print, operator"
+          />
+          <p className="mt-1 text-[11px] text-slate-500">
+            The LinkedIn Dashboard can fill this from your search history. These terms are only sent to public feeds when you enable a keyword-based source.
+          </p>
+        </div>
         <div className="mt-5 grid gap-5 lg:grid-cols-2">
           <div>
             <label className="label">LinkedIn profile URL</label>

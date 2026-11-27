@@ -9,7 +9,7 @@ export async function extractTextFromFile(file: File): Promise<string> {
   const ext = extensionOf(file.name);
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  if (ext === "txt" || ext === "md" || ext === "json" || file.type.startsWith("text/")) {
+  if (ext === "txt" || ext === "md" || ext === "json" || file.type?.startsWith("text/")) {
     return buffer.toString("utf8");
   }
 

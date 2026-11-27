@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 import {
   ArrowRight,
   BriefcaseBusiness,
@@ -12,20 +12,27 @@ import {
   ScanSearch,
   UploadCloud,
 } from "lucide-react";
-import type { AppSettings, AtsAnalysisRecord, JobDescription, StoredProfile } from "@/lib/types";
-import { Card, EmptyState, SectionHeader, Spinner, Stat } from "./ui";
+import type {
+  AppSettings,
+  AtsAnalysisRecord,
+  JobDescription,
+  LinkedInExportSnapshot,
+  StoredProfile,
+} from "@/lib/types";
+import { Card, EmptyState, SectionHeader, Stat } from "./ui";
 
 type Props = {
   profiles: Record<string, StoredProfile | null>;
   jobs: JobDescription[];
   analyses: AtsAnalysisRecord[];
   settings: AppSettings | null;
+  linkedin: LinkedInExportSnapshot | null;
   busy: string | null;
-  onImport: (source: "resume" | "linkedin", file: File | null, text: string) => Promise<void>;
+  onImport: (files: File[], text: string) => Promise<void>;
   onNavigate: (section: "overview" | "profile" | "jobs" | "titles" | "ats" | "settings") => void;
 };
 
-export default function Overview({ profiles, jobs, analyses, settings, busy, onImport, onNavigate }: Props) {
+export default function Overview({ profiles, jobs, analyses, settings, linkedin, busy, onImport, onNavigate }: Props) {
   const latest = analyses[0];
   const profileReady = Boolean(profiles.active?.profile?.name || profiles.active?.profile?.experience?.length);
   const importedLinkedIn = profiles.active?.profile.links.find((link) => /linkedin/i.test(link.url || link.label));
@@ -37,35 +44,43 @@ export default function Overview({ profiles, jobs, analyses, settings, busy, onI
       <SectionHeader
         eyebrow="Welcome back"
         title="Your job search workspace"
-        description="Import your resume and LinkedIn profile, score them against a job description, and see exactly what an ATS would notice. Everything stays on this machine."
+        description="Import your resume and LinkedIn data together, score the result against a job description, and explore your LinkedIn export in the dashboard under ATS Check. Everything stays on this machine."
       />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Resume" value={profiles.resume ? "Ready" : "Missing"} hint={profiles.resume?.filename} tone={profiles.resume ? "good" : "warn"} />
-        <Stat label="LinkedIn" value={profiles.linkedin ? "Ready" : "Missing"} hint={profiles.linkedin?.filename} tone={profiles.linkedin ? "good" : "warn"} />
+        <Stat label="Profile data" value={profileReady ? "Ready" : "Missing"} hint={profiles.active?.filename || "Import a resume or export"} tone={profileReady ? "good" : "warn"} />
+        <Stat label="LinkedIn CSVs" value={linkedin?.tableCount ?? 0} hint={linkedin ? `${linkedin.rowCount.toLocaleString()} rows` : "Export not loaded"} tone={linkedin ? "good" : "default"} />
         <Stat label="Job descriptions" value={jobs.length} hint="Saved ATS targets" />
         <Stat label="Latest ATS score" value={latest ? `${latest.result.overall}` : "—"} hint={latest?.jobTitle ?? "No analysis yet"} tone={latest ? (latest.result.overall >= 70 ? "good" : "warn") : "default"} />
       </div>
 
       <div className="mt-7 grid gap-5 lg:grid-cols-2">
         <ImportCard
-          kind="resume"
-          title="Import your resume"
-          description="PDF, DOCX, or plain text. We extract the text and split it into sections."
-          icon={<FileText className="h-5 w-5" />}
-          imported={profiles.resume}
-          busy={busy === "resume"}
+          profiles={profiles}
+          busy={busy === "profile"}
           onImport={onImport}
+          onOpenDashboard={() => onNavigate("ats")}
         />
-        <ImportCard
-          kind="linkedin"
-          title="Import your LinkedIn profile"
-          description="Download your data from LinkedIn and upload the JSON file, or paste your profile text."
-          icon={<Linkedin className="h-5 w-5" />}
-          imported={profiles.linkedin}
-          busy={busy === "linkedin"}
-          onImport={onImport}
-        />
+
+        <Card className="relative overflow-hidden p-6">
+          <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-accent-500/10 blur-3xl" />
+          <div className="relative">
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-accent-400">LinkedIn Dashboard</p>
+            <h2 className="mt-3 text-lg font-semibold text-white">Turn your export into signals</h2>
+            <p className="muted mt-2 text-sm">
+              Search queries, saved alerts, connections, follows, learning, screening answers, and every raw CSV are
+              available in a local dashboard under ATS Check.
+            </p>
+            <div className="mt-5 space-y-2 text-xs text-slate-400">
+              <p className="flex items-center gap-2"><Linkedin className="h-3.5 w-3.5 text-slate-500" /> Career intent analyzer with apply-to-search controls</p>
+              <p className="flex items-center gap-2"><FileText className="h-3.5 w-3.5 text-slate-500" /> One editable working profile, with an imported snapshot for reset</p>
+              <p className="flex items-center gap-2"><ScanSearch className="h-3.5 w-3.5 text-slate-500" /> Sensitive CSVs masked by default and excluded from insights</p>
+            </div>
+            <button onClick={() => onNavigate("ats")} className="btn-primary mt-5">
+              Open LinkedIn Dashboard <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+        </Card>
       </div>
 
       <Card className="mt-6 p-5 sm:p-6">
@@ -179,29 +194,26 @@ export default function Overview({ profiles, jobs, analyses, settings, busy, onI
           )}
         </Card>
 
-        <Card className="relative overflow-hidden p-6">
-          <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-accent-500/10 blur-3xl" />
-          <div className="relative">
-            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-accent-400">Next step</p>
-            <h2 className="mt-3 text-lg font-semibold text-white">Run your first ATS check</h2>
-            <p className="muted mt-2">
-              {!profileReady
-                ? "Import a resume to build your working profile first."
-                : jobs.length === 0
-                  ? "Add the job description you are targeting."
-                  : "Pick a job description and see where you stand."}
-            </p>
-            <button
-              onClick={() => onNavigate(!profileReady ? "profile" : jobs.length === 0 ? "jobs" : "ats")}
-              className="btn-primary mt-5"
-            >
-              {!profileReady ? "Open profile" : jobs.length === 0 ? "Add a job" : "Run ATS check"}
-              <ArrowRight className="h-4 w-4" />
-            </button>
-            <div className="mt-6 space-y-2 border-t border-white/[0.06] pt-5 text-xs text-slate-400">
-              <p className="flex items-center gap-2"><BriefcaseBusiness className="h-3.5 w-3.5 text-slate-500" /> Paste a job description for live keyword gaps</p>
-              <p className="flex items-center gap-2"><UploadCloud className="h-3.5 w-3.5 text-slate-500" /> Local SQLite storage — no account needed</p>
-            </div>
+        <Card className="p-6">
+          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-accent-400">Next step</p>
+          <h2 className="mt-3 text-lg font-semibold text-white">Run your first ATS check</h2>
+          <p className="muted mt-2">
+            {!profileReady
+              ? "Import a resume or LinkedIn export to build your working profile first."
+              : jobs.length === 0
+                ? "Add the job description you are targeting."
+                : "Pick a job description and see where you stand."}
+          </p>
+          <button
+            onClick={() => onNavigate(!profileReady ? "profile" : jobs.length === 0 ? "jobs" : "ats")}
+            className="btn-primary mt-5"
+          >
+            {!profileReady ? "Open profile" : jobs.length === 0 ? "Add a job" : "Run ATS check"}
+            <ArrowRight className="h-4 w-4" />
+          </button>
+          <div className="mt-6 space-y-2 border-t border-white/[0.06] pt-5 text-xs text-slate-400">
+            <p className="flex items-center gap-2"><BriefcaseBusiness className="h-3.5 w-3.5 text-slate-500" /> Paste a job description for live keyword gaps</p>
+            <p className="flex items-center gap-2"><UploadCloud className="h-3.5 w-3.5 text-slate-500" /> Local storage — no account needed</p>
           </div>
         </Card>
       </div>
@@ -220,45 +232,44 @@ function safeExternalUrl(value: string): string | null {
 }
 
 function ImportCard({
-  kind,
-  title,
-  description,
-  icon,
-  imported,
+  profiles,
   busy,
   onImport,
+  onOpenDashboard,
 }: {
-  kind: "resume" | "linkedin";
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-  imported: StoredProfile | null | undefined;
+  profiles: Record<string, StoredProfile | null>;
   busy: boolean;
-  onImport: (source: "resume" | "linkedin", file: File | null, text: string) => Promise<void>;
+  onImport: (files: File[], text: string) => Promise<void>;
+  onOpenDashboard: () => void;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
   const [mode, setMode] = useState<"file" | "text">("file");
-  const [dragging, setDragging] = useState(false);
 
-  async function handleFile(file: File | null) {
-    if (file) await onImport(kind, file, "");
+  async function handleFiles(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length) await onImport(files, text);
   }
+
+  const ready = Boolean(profiles.active || profiles.imported);
 
   return (
     <Card className="p-6">
       <div className="flex items-start gap-4">
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/[0.05] text-accent-400">
-          {icon}
+          <UploadCloud className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-base font-semibold text-white">{title}</h2>
-            {imported && (
-              <span className="chip border-mint-500/20 bg-mint-500/10 text-mint-400">Imported</span>
-            )}
+            <h2 className="text-base font-semibold text-white">Import your profile data</h2>
+            {ready && <span className="chip border-mint-500/20 bg-mint-500/10 text-mint-400">Ready</span>}
           </div>
-          <p className="muted mt-1.5 text-[13px]">{description}</p>
+          <p className="muted mt-1.5 text-[13px]">
+            One import builds your working profile, an imported snapshot, and the LinkedIn Dashboard. Add a resume file,
+            a LinkedIn ZIP/folder, or multiple CSV files — any combination works.
+          </p>
         </div>
       </div>
 
@@ -267,7 +278,7 @@ function ImportCard({
           onClick={() => setMode("file")}
           className={`rounded-lg px-3 py-1.5 text-xs font-medium ${mode === "file" ? "bg-white/10 text-white" : "text-slate-500 hover:text-slate-300"}`}
         >
-          Upload file
+          Files or ZIP
         </button>
         <button
           onClick={() => setMode("text")}
@@ -278,52 +289,44 @@ function ImportCard({
       </div>
 
       {mode === "file" ? (
-        <div
-          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragging(false);
-            void handleFile(e.dataTransfer.files[0] ?? null);
-          }}
-          onClick={() => inputRef.current?.click()}
-          className={`mt-3 cursor-pointer rounded-xl border border-dashed px-4 py-6 text-center transition ${
-            dragging ? "border-accent-400 bg-accent-500/10" : "border-white/10 hover:border-accent-500/40 hover:bg-white/[0.02]"
-          }`}
-        >
-          <input
-            ref={inputRef}
-            type="file"
-            accept={kind === "resume" ? ".pdf,.docx,.txt,.md" : ".json,.txt,.html,.pdf,.docx"}
-            className="hidden"
-            onChange={(e) => void handleFile(e.target.files?.[0] ?? null)}
-          />
-          {busy ? (
-            <Spinner label="Parsing…" />
-          ) : (
-            <>
-              <UploadCloud className="mx-auto h-5 w-5 text-slate-500" />
-              <p className="mt-2 text-xs text-slate-400">Drop a file here or click to browse</p>
-              {imported && <p className="mt-1 truncate text-[11px] text-slate-500">{imported.filename}</p>}
-            </>
-          )}
+        <div className="mt-5">
+          <div className="flex flex-wrap gap-2">
+            <button className="btn-primary text-xs" disabled={busy} onClick={() => fileRef.current?.click()}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+              Choose files
+            </button>
+            <button className="btn-ghost text-xs" disabled={busy} onClick={() => folderRef.current?.click()}>
+              <Linkedin className="h-4 w-4" /> Choose folder
+            </button>
+          </div>
+          <input ref={fileRef} type="file" multiple accept=".zip,.csv,.pdf,.docx,.txt,.md,.json" className="hidden" onChange={(event) => void handleFiles(event)} />
+          <input ref={folderRef} type="file" multiple className="hidden" {...({ webkitdirectory: "" } as Record<string, string>)} onChange={(event) => void handleFiles(event)} />
+          <p className="mt-3 text-[11px] text-slate-500">
+            PDF/DOCX/TXT resume · LinkedIn export ZIP · selected CSV files · pasted text can be added in the Paste tab.
+          </p>
         </div>
       ) : (
-        <div className="mt-3">
+        <div className="mt-5">
           <textarea
+            className="input min-h-32"
             value={text}
-            onChange={(e) => setText(e.target.value)}
-            rows={4}
-            className="input resize-y font-mono text-xs"
-            placeholder={kind === "resume" ? "Paste your full resume text here…" : "Paste your LinkedIn profile text here…"}
+            onChange={(event) => setText(event.target.value)}
+            placeholder="Paste your resume or profile text here."
           />
-          <button
-            className="btn-ghost mt-3 w-full"
-            disabled={busy || !text.trim()}
-            onClick={() => void onImport(kind, null, text)}
-          >
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Parse pasted text
+          <button className="btn-primary mt-3 text-xs" disabled={busy || !text.trim()} onClick={() => void onImport([], text)}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+            Import pasted text
+          </button>
+        </div>
+      )}
+
+      {ready && (
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] pt-4">
+          <p className="text-[11px] text-slate-500">
+            Last import: <span className="text-slate-300">{profiles.active?.filename || profiles.imported?.filename}</span>
+          </p>
+          <button className="text-xs font-medium text-accent-400 hover:text-accent-300" onClick={onOpenDashboard}>
+            View LinkedIn Dashboard →
           </button>
         </div>
       )}

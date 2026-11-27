@@ -1,4 +1,6 @@
-export type ProfileSource = "resume" | "linkedin" | "active";
+export type ProfileSource = "active" | "imported" | "resume" | "linkedin";
+
+export const WORKING_PROFILE_SOURCES: ProfileSource[] = ["active", "imported"];
 
 export interface LinkItem {
   label: string;
@@ -126,6 +128,94 @@ export interface StoredProfile {
   updatedAt: string;
 }
 
+export type LinkedInDataCategory =
+  | "profile"
+  | "career"
+  | "intent"
+  | "network"
+  | "learning"
+  | "applications"
+  | "activity"
+  | "private";
+
+export interface LinkedInCsvTable {
+  id: string;
+  name: string;
+  label: string;
+  category: LinkedInDataCategory;
+  rowCount: number;
+  columns: string[];
+  rows: Array<Record<string, string>>;
+  warnings: string[];
+}
+
+export interface LinkedInWeightedTerm {
+  term: string;
+  count: number;
+  recentCount: number;
+  weight: number;
+}
+
+export interface LinkedInRoleSignal {
+  label: string;
+  count: number;
+  evidence: string[];
+}
+
+export interface LinkedInLocationSignal {
+  label: string;
+  count: number;
+}
+
+export interface SearchIntentInsights {
+  generatedAt: string;
+  queryCount: number;
+  distinctQueries: number;
+  topTerms: LinkedInWeightedTerm[];
+  roleFamilies: LinkedInRoleSignal[];
+  locations: LinkedInLocationSignal[];
+  workplaceTypes: string[];
+  alertKeywords: string[];
+  suggestedTargetRole: string;
+  searchKeywords: string[];
+  locationTerms: string[];
+  confidence: "low" | "medium" | "high";
+  evidenceFiles: string[];
+}
+
+export interface LinkedInExportSnapshot {
+  id: string;
+  importedAt: string;
+  fileCount: number;
+  tableCount: number;
+  rowCount: number;
+  tables: LinkedInCsvTable[];
+  insights: SearchIntentInsights;
+  warnings: string[];
+}
+
+export interface ProfileImportSummary {
+  resumeFilename: string;
+  linkedinFileCount: number;
+  detected: Record<string, number>;
+  conflicts: string[];
+  warnings: string[];
+}
+
+export interface ProfileImportPreview {
+  profile: Profile;
+  imported: Profile;
+  summary: ProfileImportSummary;
+  linkedin: LinkedInExportSnapshot;
+  rawText: string;
+  filename: string;
+}
+
+export interface ProfileImportResult {
+  preview: ProfileImportPreview;
+  applied: boolean;
+}
+
 export interface JobDescription {
   id: string;
   title: string;
@@ -229,6 +319,7 @@ export interface JobDiscoverySettings {
   greenhouseBoards: string[];
   leverBoards: string[];
   locationTerms: string[];
+  searchKeywords: string[];
   maxJobsPerSource: number;
   adzunaAppId: string;
   adzunaApiKey: string;
@@ -241,6 +332,7 @@ export const DEFAULT_JOB_DISCOVERY_SETTINGS: JobDiscoverySettings = {
   greenhouseBoards: [],
   leverBoards: [],
   locationTerms: [],
+  searchKeywords: [],
   maxJobsPerSource: 100,
   adzunaAppId: "",
   adzunaApiKey: "",

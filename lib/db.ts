@@ -11,6 +11,7 @@ import type {
   AppSettings,
   JobDescription,
   JobListing,
+  LinkedInExportSnapshot,
   Profile,
   ProfileSource,
   StoredProfile,
@@ -71,6 +72,11 @@ const SCHEMA = `
   CREATE TABLE IF NOT EXISTS title_refresh_state (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS linkedin_exports (
+    id TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    imported_at TEXT NOT NULL
   );
 `;
 
@@ -216,11 +222,43 @@ export async function getProfile(source: ProfileSource): Promise<StoredProfile |
 }
 
 export async function getAllProfiles(): Promise<Record<string, StoredProfile | null>> {
-  return {
-    resume: await getProfile("resume"),
-    linkedin: await getProfile("linkedin"),
-    active: await getProfile("active"),
-  };
+  const [resume, linkedin] = await Promise.all([getProfile("resume"), getProfile("linkedin")]);
+  let imported = await getProfile("imported");
+  if (!imported) {
+    const legacy = resume ?? linkedin ?? (await getProfile("active"));
+    if (legacy) imported = await saveProfile("imported", legacy.profile, legacy.rawText, legacy.filename);
+  }
+  let active = await getProfile("active");
+  if (!active && imported) {
+    active = await saveProfile("active", imported.profile, imported.rawText, imported.filename);
+  }
+  return { active, imported, resume, linkedin };
+}
+
+export async function saveLinkedInExport(snapshot: LinkedInExportSnapshot): Promise<LinkedInExportSnapshot> {
+  const db = await getDb();
+  runSql(
+    db,
+    `INSERT INTO linkedin_exports (id, payload, imported_at) VALUES (?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, imported_at = excluded.imported_at`,
+    [snapshot.id, JSON.stringify(snapshot), snapshot.importedAt],
+  );
+  const rows = allRows(db, "SELECT id FROM linkedin_exports");
+  for (const row of rows) {
+    if (text(row.id) !== snapshot.id) runSql(db, "DELETE FROM linkedin_exports WHERE id = ?", [row.id]);
+  }
+  return snapshot;
+}
+
+export async function getLinkedInExport(): Promise<LinkedInExportSnapshot | null> {
+  const db = await getDb();
+  const row = oneRow(db, "SELECT payload FROM linkedin_exports ORDER BY imported_at DESC LIMIT 1");
+  return row ? parseJson<LinkedInExportSnapshot | null>(text(row.payload, "null"), null) : null;
+}
+
+export async function clearLinkedInExport(): Promise<void> {
+  const db = await getDb();
+  runSql(db, "DELETE FROM linkedin_exports");
 }
 
 export async function createJob(title: string, company: string, rawText: string): Promise<JobDescription> {

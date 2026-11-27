@@ -43,8 +43,9 @@ type Props = {
 
 const SOURCE_LABELS: Record<ProfileSource, string> = {
   active: "Working profile",
-  resume: "Original resume",
-  linkedin: "LinkedIn profile",
+  imported: "Imported snapshot",
+  resume: "Legacy resume",
+  linkedin: "Legacy LinkedIn",
 };
 
 export default function JobManager({ jobs, profiles, busy, onAdd, onDelete, onClearJobs, onSaveProfile, onAnalyzeKeywords, onAnalyze, onNavigateTitles, pdfPageMode, onPdfPageModeChange }: Props) {
@@ -53,7 +54,7 @@ export default function JobManager({ jobs, profiles, busy, onAdd, onDelete, onCl
   const [rawText, setRawText] = useState("");
   const [savedOpen, setSavedOpen] = useState(false);
   const [resumeSource, setResumeSource] = useState<ProfileSource>(() =>
-    profiles.resume ? "resume" : profiles.active ? "active" : "linkedin",
+    profiles.active ? "active" : profiles.imported ? "imported" : "active",
   );
   const [analysis, setAnalysis] = useState<KeywordAnalysis | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -63,7 +64,7 @@ export default function JobManager({ jobs, profiles, busy, onAdd, onDelete, onCl
   const requestId = useRef(0);
 
   const availableSources = useMemo(
-    () => (["resume", "active", "linkedin"] as ProfileSource[]).filter((s) => Boolean(profiles[s])),
+    () => (["active", "imported"] as ProfileSource[]).filter((s) => Boolean(profiles[s])),
     [profiles],
   );
 
