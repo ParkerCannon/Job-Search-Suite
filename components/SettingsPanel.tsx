@@ -242,7 +242,7 @@ export default function SettingsPanel({ settings, busy, onSave, staticMode = fal
         <Card className="mt-6 p-6">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-white"><RefreshCw className="h-4 w-4 text-accent-400" /> Software updates</h2>
           <p className="muted mt-1.5 text-xs">
-            Pull the latest version from this project's Git remote, or from the published source when this folder was installed from a ZIP. Git updates are fast-forward only and are skipped when you have uncommitted changes or local commits. Private data and local settings are never sent or replaced.
+            Pull the latest version from this project's Git remote, or from the published source when this folder was installed from a ZIP. Dependencies are synchronized on every check, so packages are current on any device. Git updates are fast-forward only and are skipped when you have uncommitted changes or local commits. Private data and local settings are never sent or replaced.
           </p>
           <div className="mt-5">
             <button
@@ -267,7 +267,7 @@ export default function SettingsPanel({ settings, busy, onSave, staticMode = fal
             </button>
           </div>
           {updateMessage && <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-ink-950/60 p-3 text-[11px] text-slate-400">{updateMessage}</pre>}
-          <p className="mt-3 text-[11px] text-slate-500">When files change, the page reloads automatically. If dependencies changed, close and relaunch the launcher to finish applying them.</p>
+          <p className="mt-3 text-[11px] text-slate-500">When files change, the page reloads automatically. Restart the launcher only if a dependency was replaced.</p>
         </Card>
       )}
 

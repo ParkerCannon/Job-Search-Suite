@@ -76,6 +76,32 @@ function missingDependencies() {
   }
 }
 
+function refreshDependencies(reason) {
+  const lockPath = path.join(projectRoot, "package-lock.json");
+  const lockBefore = fs.existsSync(lockPath) ? fs.readFileSync(lockPath) : null;
+  console.log(`Dependency sync: ${reason}.`);
+  const install = spawnSync(npmCmd, ["install", "--no-audit", "--no-fund"], {
+    cwd: projectRoot,
+    shell: isWindows,
+    stdio: "inherit",
+    windowsHide: true,
+  });
+  if (lockBefore && fs.existsSync(lockPath) && !fs.readFileSync(lockPath).equals(lockBefore)) {
+    fs.writeFileSync(lockPath, lockBefore);
+  }
+  if (install.status !== 0) {
+    console.log("Dependency sync failed. Check the npm output above.");
+    return false;
+  }
+  const missing = missingDependencies();
+  if (missing.length > 0) {
+    console.log(`Dependency sync did not install: ${missing.join(", ")}`);
+    return false;
+  }
+  console.log("Dependency sync complete.");
+  return true;
+}
+
 function ensureEnvironment(forceInstall = false) {
   const nodeVersion = process.versions.node;
   const nodeMajor = Number(nodeVersion.split(".")[0]);
@@ -250,19 +276,6 @@ async function updateFromArchive() {
 
     if (changedCount > 0) console.log(`Auto-update: applied ${changedCount} changed file(s) from the published source.`);
     else console.log("Auto-update: already up to date with the published source.");
-
-    if (dependenciesChanged) {
-      console.log("Auto-update: dependency files changed; refreshing npm packages...");
-      const install = spawnSync(npmCmd, ["install"], {
-        cwd: projectRoot,
-        shell: isWindows,
-        stdio: "inherit",
-        windowsHide: true,
-      });
-      if (install.status !== 0) {
-        console.log("Auto-update: npm install failed; restart the launcher to install dependencies.");
-      }
-    }
 
     return { dependenciesChanged, changed: changedCount > 0 };
   } catch (error) {
@@ -580,8 +593,11 @@ async function main() {
 
   if (mode === "update") {
     console.log(`UPDATE_FILES_CHANGED=${update.changed ? 1 : 0}`);
-    if (update.dependenciesChanged) console.log("Dependencies changed; restart the launcher to finish applying them.");
-    console.log("Update check complete. Restart the launcher if files changed.");
+    let reason = "keeping dependencies current";
+    if (update.dependenciesChanged) reason = "package files changed";
+    else if (missingDependencies().length > 0) reason = "packages are missing";
+    if (!refreshDependencies(reason)) console.log("UPDATE_DEPENDENCY_ERROR=1");
+    console.log("Update check complete. Restart the launcher if a dependency was replaced.");
     return;
   }
 

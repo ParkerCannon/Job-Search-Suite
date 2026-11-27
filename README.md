@@ -35,7 +35,7 @@ Use the launcher for your shell. Each one starts the local server, finds the nex
 
 All three accept `check`, `reset`, and `update` arguments. In a Git clone they pull only with `--ff-only` and still start your local copy if you have uncommitted tracked changes, local commits, a detached HEAD, no `origin`, or no network. There is no HTML/web shortcut because it cannot start the server.
 
-In the server build, **Settings → Software updates → Pull latest version** runs the same update check and shows the result. Git clones pull from `origin`; folders installed from a ZIP download the published source archive from this project's GitHub repository instead. Both paths replace only application source files: `data/`, `.env*`, keys, dependencies, and build output are left untouched. When files change, the page reloads automatically. If dependencies changed, close and relaunch the launcher. The browser-only build updates through its launcher instead.
+In the server build, **Settings → Software updates → Pull latest version** runs the same update check and shows the result. Git clones pull from `origin`; folders installed from a ZIP download the published source archive from this project's GitHub repository instead. Both paths replace only application source files: `data/`, `.env*`, keys, and build output are left untouched. Every check also runs `npm install` so dependencies match `package.json` and `package-lock.json` on that device, whether or not source files changed; a failed install is reported as an error. When files change, the page reloads automatically. Restart the launcher only if a dependency was replaced. The browser-only build updates through its launcher instead.
 
 For a production run:
 
