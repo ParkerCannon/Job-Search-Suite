@@ -64,6 +64,18 @@ function commandOutput(command, args, options = {}) {
   }
 }
 
+function missingDependencies() {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "package.json"), "utf8"));
+    const required = { ...(manifest.dependencies || {}), ...(manifest.devDependencies || {}) };
+    return Object.keys(required).filter(
+      (name) => !fs.existsSync(path.join(projectRoot, "node_modules", ...name.split("/"))),
+    );
+  } catch {
+    return [];
+  }
+}
+
 function ensureEnvironment(forceInstall = false) {
   const nodeVersion = process.versions.node;
   const nodeMajor = Number(nodeVersion.split(".")[0]);
@@ -80,10 +92,12 @@ function ensureEnvironment(forceInstall = false) {
   }
   console.log(`npm: ${commandOutput(npmCmd, ["--version"]) || "available"}`);
 
-  if (forceInstall || !fs.existsSync(path.join(projectRoot, "node_modules", "next"))) {
+  const missing = missingDependencies();
+  if (forceInstall || missing.length > 0 || !fs.existsSync(path.join(projectRoot, "node_modules", "next"))) {
     const installArgs = forceInstall && fs.existsSync(path.join(projectRoot, "package-lock.json"))
       ? ["ci"]
       : ["install"];
+    if (missing.length > 0) console.log(`Missing packages detected: ${missing.join(", ")}`);
     console.log(forceInstall ? "Dependencies changed; refreshing npm packages..." : "Installing dependencies...");
     const install = spawnSync(npmCmd, installArgs, {
       cwd: projectRoot,
