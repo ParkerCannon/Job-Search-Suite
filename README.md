@@ -12,7 +12,7 @@ You can run it three ways: a Node server with live public feeds, a **single HTML
 - **Single-file browser build:** any modern browser. Node is needed once to generate the file, not to use it.
 - **Desktop app:** Windows 10, macOS, or Linux. The packaged app includes its own runtime; no Node installation is needed.
 
-> The root `Launch Job Search Suite.html` is only a shortcut that checks for the server and redirects to it — opening it does not render the GUI. The self-contained app is `dist-portable/index.html`, produced by `npm run build:static` (or included in the desktop package).
+> The self-contained offline app is `dist-portable/index.html`, produced by `npm run build:static` (or included in the desktop package). A plain browser/web shortcut cannot start the local server, so use the shell launcher for your operating system instead.
 
 ## Run it
 
@@ -25,14 +25,15 @@ npm run dev
 
 Then open the URL printed in the terminal, usually http://localhost:3000. If that port is busy, the launcher tries 3001 through 3010 and prints the URL it selected. The first run creates `data/job-search-suite.db` locally.
 
-### Desktop shortcut
+### Desktop shortcuts
 
-- **`Launch Job Search Suite.cmd`** (Windows, recommended) — double-click to locate Node.js even when it is not on `PATH`, check the Git remote for updates, pull safely, check Node.js/npm, install dependencies if needed, find the next available port, clear stale build cache, start a fresh dev server, wait until it responds, and open the browser. Pulls are fast-forward only: the launcher skips the update and still starts your local copy if you have uncommitted tracked changes, local commits, a detached HEAD, no `origin`, or no network. Run it with `check` to validate the environment without updating, or `reset` to stop this project's servers and start clean.
-- **`Launch Job Search Suite.command`** (macOS) and **`Launch Job Search Suite.sh`** (Linux) — equivalent wrappers. On macOS, right-click → *Open* the first time if Gatekeeper asks.
-- **`Launch Job Search Suite.html`** — right-click → *Send to* → *Desktop (create shortcut)*. It checks for the server and shows setup instructions if the server is not running.
-- **`Job Search Suite.url`** — a plain Internet Shortcut to `http://localhost:3000`. It only works while the server is using port 3000.
+Use the launcher for your shell. Each one starts the local server, finds the next free port in 3000–3010, waits until it responds, and opens the actual URL. Keep the terminal window open while you use the app.
 
-The HTML file and `.url` shortcut require the dev server to be running (`npm run dev`). The launchers start it for you and always print the actual URL.
+- **Windows:** `Launch Job Search Suite.cmd` — double-click it, or right-click → *Send to* → *Desktop (create shortcut)*. It also locates Node.js when `PATH` is stale.
+- **macOS:** `Launch Job Search Suite.command` — copy it to the Desktop or make an alias, then run it. Right-click → *Open* the first time if Gatekeeper asks.
+- **Linux:** `Launch Job Search Suite.sh` — copy it to the Desktop, mark it executable with `chmod +x`, then double-click or run it from a terminal. A `.desktop` entry can point to this script.
+
+All three accept `check`, `reset`, and `update` arguments. They pull only with `--ff-only` and still start your local copy if you have uncommitted tracked changes, local commits, a detached HEAD, no `origin`, or no network. There is no HTML/web shortcut because it cannot start the server.
 
 In the server build, **Settings → Software updates → Pull latest version** runs the same safe Git check and shows the result. Close and relaunch the app if files changed. The browser-only build updates through its launcher instead.
 
@@ -184,11 +185,9 @@ static/                         Vite entry for the single-file build
 vite.static.config.ts           Single-file build configuration
 dist-portable/index.html        Generated offline app (git-ignored)
 dist-electron/                  Generated desktop packages (git-ignored)
-Launch Job Search Suite.cmd     Windows launcher wrapper
-Launch Job Search Suite.command macOS launcher wrapper
-Launch Job Search Suite.sh      Linux launcher wrapper
-Launch Job Search Suite.html    Browser launcher (checks server, then redirects)
-Job Search Suite.url            Plain localhost shortcut (requires port 3000)
+Launch Job Search Suite.cmd     Windows shell launcher
+Launch Job Search Suite.command macOS shell launcher
+Launch Job Search Suite.sh      Linux shell launcher
 package.json                    Scripts and Node engine requirement
 ```
 
