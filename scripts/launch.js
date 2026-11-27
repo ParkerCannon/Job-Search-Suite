@@ -16,7 +16,9 @@ const portStart = 3000;
 const portEnd = 3010;
 const gitCmd = "git";
 const updateTimeoutMs = 20000;
-const updateArchiveUrl = "https://codeload.github.com/ParkerCannon/Job-Search-Suite/tar.gz/refs/heads/main";
+const updateRepository = "https://github.com/ParkerCannon/Job-Search-Suite.git";
+const updateCommitApi = "https://api.github.com/repos/ParkerCannon/Job-Search-Suite/commits/main";
+const updateArchiveFallback = "https://codeload.github.com/ParkerCannon/Job-Search-Suite/tar.gz/refs/heads/main";
 const updateStateFile = ".install-state.json";
 const dependencyFiles = new Set(["package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"]);
 
@@ -213,13 +215,39 @@ function sameFileContents(left, right) {
   }
 }
 
+async function resolveRemoteSha() {
+  if (commandSucceeded(gitCmd, ["--version"])) {
+    const remote = commandOutput(gitCmd, ["ls-remote", updateRepository, "refs/heads/main"], {
+      timeoutMs: updateTimeoutMs * 3,
+    });
+    const match = remote.match(/^([0-9a-f]{40})\s+refs\/heads\/main$/m);
+    if (match) return match[1];
+  }
+  try {
+    const response = await fetch(updateCommitApi, {
+      redirect: "follow",
+      signal: AbortSignal.timeout(updateTimeoutMs * 3),
+    });
+    if (!response.ok) return "";
+    const data = await response.json();
+    return typeof data.sha === "string" && /^[0-9a-f]{40}$/.test(data.sha) ? data.sha : "";
+  } catch {
+    return "";
+  }
+}
+
 async function updateFromArchive() {
   console.log("Git checkout is unavailable; checking the published source archive...");
   let tempDir = "";
   try {
+    const sha = await resolveRemoteSha();
+    const archiveUrl = sha
+      ? `https://codeload.github.com/ParkerCannon/Job-Search-Suite/tar.gz/${sha}`
+      : updateArchiveFallback;
+    if (!sha) console.log("Auto-update: using the branch archive because the commit hash was unavailable.");
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "jss-update-"));
     const archivePath = path.join(tempDir, "source.tar.gz");
-    const response = await fetch(updateArchiveUrl, {
+    const response = await fetch(archiveUrl, {
       redirect: "follow",
       signal: AbortSignal.timeout(updateTimeoutMs * 3),
     });
