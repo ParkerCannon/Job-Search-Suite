@@ -7,6 +7,7 @@ import {
   KeyRound,
   Link2,
   Loader2,
+  RefreshCw,
   Save,
   Search,
   ShieldCheck,
@@ -28,6 +29,7 @@ type Props = {
   onExportBackup?: () => Promise<void>;
   onImportBackup?: (json: string) => Promise<void>;
   onClearLocalData?: () => Promise<void>;
+  onUpdate?: () => Promise<{ output: string }>;
 };
 
 const WEIGHT_LABELS: { key: string; label: string; description: string }[] = [
@@ -44,10 +46,12 @@ const parseList = (value: string): string[] =>
     .map((item) => item.trim())
     .filter(Boolean);
 
-export default function SettingsPanel({ settings, busy, onSave, staticMode = false, onExportBackup, onImportBackup, onClearLocalData }: Props) {
+export default function SettingsPanel({ settings, busy, onSave, staticMode = false, onExportBackup, onImportBackup, onClearLocalData, onUpdate }: Props) {
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [backupBusy, setBackupBusy] = useState(false);
   const [backupMessage, setBackupMessage] = useState("");
+  const [updating, setUpdating] = useState(false);
+  const [updateMessage, setUpdateMessage] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
   const total = Object.values(draft.weights).reduce((a, b) => a + b, 0);
   const discovery = draft.jobDiscovery ?? DEFAULT_JOB_DISCOVERY_SETTINGS;
@@ -221,6 +225,38 @@ export default function SettingsPanel({ settings, busy, onSave, staticMode = fal
         </div>
         <p className="mt-3 text-[11px] text-slate-500">If no LinkedIn URL is entered here, the app uses one found in an imported LinkedIn profile when available.</p>
       </Card>
+
+      {!staticMode && onUpdate && (
+        <Card className="mt-6 p-6">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-white"><RefreshCw className="h-4 w-4 text-accent-400" /> Software updates</h2>
+          <p className="muted mt-1.5 text-xs">
+            Pull the latest version from this project's Git remote. Updates are fast-forward only and are skipped when you have uncommitted changes or local commits.
+          </p>
+          <div className="mt-5">
+            <button
+              className="btn-ghost text-xs"
+              disabled={updating}
+              onClick={async () => {
+                setUpdating(true);
+                setUpdateMessage("");
+                try {
+                  const result = await onUpdate();
+                  setUpdateMessage(result.output || "Update check finished.");
+                } catch (error) {
+                  setUpdateMessage(error instanceof Error ? error.message : "Could not check for updates.");
+                } finally {
+                  setUpdating(false);
+                }
+              }}
+            >
+              {updating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Pull latest version
+            </button>
+          </div>
+          {updateMessage && <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-ink-950/60 p-3 text-[11px] text-slate-400">{updateMessage}</pre>}
+          <p className="mt-3 text-[11px] text-slate-500">If files changed, close and relaunch the app to use the new version.</p>
+        </Card>
+      )}
 
       <Card className="mt-6 p-6">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-white"><Search className="h-4 w-4 text-accent-400" /> Job title discovery</h2>

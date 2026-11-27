@@ -81,6 +81,7 @@ function readSettings(value: unknown): AppSettings {
     targetRole: asText(input.targetRole),
     jobDiscovery: normalizeJobDiscoverySettings(input.jobDiscovery),
     profileLinks: { linkedin: asText(links.linkedin), indeed: asText(links.indeed) },
+    pdfPageMode: input.pdfPageMode === "multiple" ? "multiple" : "single",
   };
 }
 

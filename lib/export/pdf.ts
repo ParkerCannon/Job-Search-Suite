@@ -1,4 +1,4 @@
-import { flattenSkillGroups, type Profile } from "../types";
+import { flattenSkillGroups, type PdfPageMode, type Profile } from "../types";
 
 const PAGE_WIDTH = 612; // US Letter, points
 const PAGE_HEIGHT = 792;
@@ -332,7 +332,10 @@ function renderCandidate(jsPDF: JsPdfConstructor, profile: Profile, options: Ren
   return doc;
 }
 
-export async function exportProfilePdf(profile: Profile): Promise<void> {
+export async function exportProfilePdf(
+  profile: Profile,
+  options: { pageMode?: PdfPageMode } = {},
+): Promise<void> {
   const { jsPDF } = await import("jspdf");
 
   const build = (candidate: Profile, margins: Margins, bodySize: number) =>
@@ -340,16 +343,18 @@ export async function exportProfilePdf(profile: Profile): Promise<void> {
 
   let doc = build(profile, { x: BASE_MARGIN_X, y: BASE_MARGIN_Y }, BASE_BODY_SIZE);
 
-  if (doc.getNumberOfPages() > 1) {
-    doc = build(trimLowValueBullets(profile), { x: BASE_MARGIN_X, y: BASE_MARGIN_Y }, BASE_BODY_SIZE);
-  }
+  if ((options.pageMode ?? "single") === "single") {
+    if (doc.getNumberOfPages() > 1) {
+      doc = build(trimLowValueBullets(profile), { x: BASE_MARGIN_X, y: BASE_MARGIN_Y }, BASE_BODY_SIZE);
+    }
 
-  if (doc.getNumberOfPages() > 1) {
-    doc = build(trimLowValueBullets(profile), { x: TIGHT_MARGIN, y: TIGHT_MARGIN }, BASE_BODY_SIZE);
-  }
+    if (doc.getNumberOfPages() > 1) {
+      doc = build(trimLowValueBullets(profile), { x: TIGHT_MARGIN, y: TIGHT_MARGIN }, BASE_BODY_SIZE);
+    }
 
-  if (doc.getNumberOfPages() > 1) {
-    doc = build(trimLowValueBullets(profile), { x: TIGHT_MARGIN, y: TIGHT_MARGIN }, MIN_BODY_SIZE);
+    if (doc.getNumberOfPages() > 1) {
+      doc = build(trimLowValueBullets(profile), { x: TIGHT_MARGIN, y: TIGHT_MARGIN }, MIN_BODY_SIZE);
+    }
   }
 
   doc.save(safeFilename(profile.name));

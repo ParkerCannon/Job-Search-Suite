@@ -19,7 +19,7 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
-import { type JobDescription, type KeywordAnalysis, type Profile, type ProfileSource, type Recommendation, type StoredProfile } from "@/lib/types";
+import { type JobDescription, type KeywordAnalysis, type PdfPageMode, type Profile, type ProfileSource, type Recommendation, type StoredProfile } from "@/lib/types";
 import { exportProfilePdf } from "@/lib/export/pdf";
 import ProfileDocument from "./ProfileDocument";
 import ResumeEditor from "./ResumeEditor";
@@ -37,6 +37,8 @@ type Props = {
   onAnalyzeKeywords: (rawText: string, source: ProfileSource) => Promise<KeywordAnalysis>;
   onAnalyze: (jobId: string) => void;
   onNavigateTitles: () => void;
+  pdfPageMode: PdfPageMode;
+  onPdfPageModeChange: (mode: PdfPageMode) => void;
 };
 
 const SOURCE_LABELS: Record<ProfileSource, string> = {
@@ -45,7 +47,7 @@ const SOURCE_LABELS: Record<ProfileSource, string> = {
   linkedin: "LinkedIn profile",
 };
 
-export default function JobManager({ jobs, profiles, busy, onAdd, onDelete, onClearJobs, onSaveProfile, onAnalyzeKeywords, onAnalyze, onNavigateTitles }: Props) {
+export default function JobManager({ jobs, profiles, busy, onAdd, onDelete, onClearJobs, onSaveProfile, onAnalyzeKeywords, onAnalyze, onNavigateTitles, pdfPageMode, onPdfPageModeChange }: Props) {
   const [title, setTitle] = useState("");
   const [company, setCompany] = useState("");
   const [rawText, setRawText] = useState("");
@@ -130,7 +132,7 @@ export default function JobManager({ jobs, profiles, busy, onAdd, onDelete, onCl
   async function exportResume() {
     await onSaveProfile(draft);
     if (resumeSource === "active") void analyze(rawText, "active");
-    await exportProfilePdf(draft);
+    await exportProfilePdf(draft, { pageMode: pdfPageMode });
   }
 
   return (
@@ -285,7 +287,29 @@ export default function JobManager({ jobs, profiles, busy, onAdd, onDelete, onCl
               Changes here update the working profile used by the analysis above. Export downloads a new PDF of this version.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center rounded-xl border border-white/10 bg-white/[0.02] p-1" role="group" aria-label="PDF length">
+              <button
+                type="button"
+                title="Fit to one page. Long roles may have lower-value bullets removed."
+                onClick={() => onPdfPageModeChange("single")}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                  pdfPageMode === "single" ? "bg-accent-500/15 text-accent-400" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                1 page
+              </button>
+              <button
+                type="button"
+                title="Keep every bullet and let the PDF continue onto more pages."
+                onClick={() => onPdfPageModeChange("multiple")}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                  pdfPageMode === "multiple" ? "bg-accent-500/15 text-accent-400" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                Multi-page
+              </button>
+            </div>
             <button className="btn-ghost text-xs" disabled={busy === "profile" || !draft.name.trim()} onClick={() => void saveResume()}>
               {busy === "profile" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
               Save changes

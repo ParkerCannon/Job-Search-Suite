@@ -263,12 +263,15 @@ export const JOB_SOURCE_IDS: JobSourceId[] = [
   "usajobs",
 ];
 
+export type PdfPageMode = "single" | "multiple";
+
 export interface AppSettings {
   ai: AiSettings;
   weights: Record<string, number>;
   targetRole: string;
   jobDiscovery: JobDiscoverySettings;
   profileLinks: ProfileLinksSettings;
+  pdfPageMode: PdfPageMode;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -277,6 +280,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   targetRole: "",
   jobDiscovery: { ...DEFAULT_JOB_DISCOVERY_SETTINGS },
   profileLinks: { linkedin: "", indeed: "" },
+  pdfPageMode: "single",
 };
 
 export interface JobSourceInfo {

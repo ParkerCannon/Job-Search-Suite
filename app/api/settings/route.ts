@@ -25,6 +25,7 @@ export async function PUT(request: Request) {
         linkedin: body.profileLinks?.linkedin ?? current.profileLinks.linkedin,
         indeed: body.profileLinks?.indeed ?? current.profileLinks.indeed,
       },
+      pdfPageMode: body.pdfPageMode === "multiple" ? "multiple" : body.pdfPageMode === "single" ? "single" : current.pdfPageMode,
     });
     return NextResponse.json({ settings });
   } catch {

@@ -451,6 +451,7 @@ export async function getSettings(): Promise<AppSettings> {
       linkedin: typeof parsed.profileLinks?.linkedin === "string" ? parsed.profileLinks.linkedin.trim() : "",
       indeed: typeof parsed.profileLinks?.indeed === "string" ? parsed.profileLinks.indeed.trim() : "",
     },
+    pdfPageMode: parsed.pdfPageMode === "multiple" ? "multiple" : "single",
   };
 }
 
@@ -465,6 +466,7 @@ export async function saveSettings(settings: AppSettings): Promise<AppSettings> 
       linkedin: typeof settings.profileLinks?.linkedin === "string" ? settings.profileLinks.linkedin.trim() : "",
       indeed: typeof settings.profileLinks?.indeed === "string" ? settings.profileLinks.indeed.trim() : "",
     },
+    pdfPageMode: settings.pdfPageMode === "multiple" ? "multiple" : "single",
   };
   runSql(db, "INSERT INTO settings (key, value) VALUES ('app', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [
     JSON.stringify(normalized),

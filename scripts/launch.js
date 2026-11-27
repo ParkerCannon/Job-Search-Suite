@@ -391,7 +391,14 @@ async function runLaunch() {
 async function main() {
   printHeader();
 
-  const update = mode === "launch" ? updateFromGit() : { dependenciesChanged: false };
+  const update = mode === "launch" || mode === "update" ? updateFromGit() : { dependenciesChanged: false };
+
+  if (mode === "update") {
+    if (update.dependenciesChanged) console.log("Dependencies changed; restart the launcher to install them.");
+    console.log("Update check complete. Restart the launcher if files changed.");
+    return;
+  }
+
   if (!ensureEnvironment(update.dependenciesChanged)) return;
 
   if (mode === "check") {

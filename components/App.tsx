@@ -242,6 +242,15 @@ export default function App({ store = serverStore }: { store?: AppStore }) {
     }
   }
 
+  async function requestUpdate(): Promise<{ output: string }> {
+    const response = await fetch("/api/update", { method: "POST" });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "Could not check for updates.");
+    }
+    return { output: String(data.output ?? "") };
+  }
+
   const profileReady = Boolean(profiles.active?.profile?.name || profiles.active?.profile?.experience?.length);
 
   return (
@@ -356,6 +365,8 @@ export default function App({ store = serverStore }: { store?: AppStore }) {
                     void runAnalysis(jobId, "active");
                   }}
                   onNavigateTitles={() => setSection("titles")}
+                  pdfPageMode={settings.pdfPageMode}
+                  onPdfPageModeChange={(mode) => void saveAppSettings({ ...settings, pdfPageMode: mode })}
                 />
               )}
               {section === "titles" && settings && (
@@ -389,6 +400,7 @@ export default function App({ store = serverStore }: { store?: AppStore }) {
                   busy={busy}
                   onSave={saveAppSettings}
                   staticMode={store.mode === "local"}
+                  onUpdate={store.mode === "local" ? undefined : requestUpdate}
                   onExportBackup={
                     store.exportBackup
                       ? async () => {
