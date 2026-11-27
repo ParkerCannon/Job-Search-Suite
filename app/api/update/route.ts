@@ -12,11 +12,18 @@ export async function POST() {
     const script = path.join(process.cwd(), "scripts", "launch.js");
     const { stdout, stderr } = await execFileAsync(process.execPath, [script, "update"], {
       cwd: process.cwd(),
-      timeout: 60000,
-      maxBuffer: 2 * 1024 * 1024,
+      timeout: 180000,
+      maxBuffer: 4 * 1024 * 1024,
       windowsHide: true,
     });
-    return NextResponse.json({ ok: true, output: `${stdout}${stderr}`.trim() });
+    const raw = `${stdout}${stderr}`;
+    const changed = /UPDATE_FILES_CHANGED=1/.test(raw);
+    const output = raw
+      .split(/\r?\n/)
+      .filter((line) => !line.startsWith("UPDATE_FILES_CHANGED="))
+      .join("\n")
+      .trim();
+    return NextResponse.json({ ok: true, changed, output });
   } catch (error) {
     const failed = error as { stdout?: string; stderr?: string; message?: string };
     const output = `${failed.stdout ?? ""}${failed.stderr ?? ""}`.trim();

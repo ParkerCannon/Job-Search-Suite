@@ -33,9 +33,9 @@ Use the launcher for your shell. Each one starts the local server, finds the nex
 - **macOS:** `Launch Job Search Suite.command` — copy it to the Desktop or make an alias, then run it. Right-click → *Open* the first time if Gatekeeper asks.
 - **Linux:** `Launch Job Search Suite.sh` — copy it to the Desktop, mark it executable with `chmod +x`, then double-click or run it from a terminal. A `.desktop` entry can point to this script.
 
-All three accept `check`, `reset`, and `update` arguments. They pull only with `--ff-only` and still start your local copy if you have uncommitted tracked changes, local commits, a detached HEAD, no `origin`, or no network. There is no HTML/web shortcut because it cannot start the server.
+All three accept `check`, `reset`, and `update` arguments. In a Git clone they pull only with `--ff-only` and still start your local copy if you have uncommitted tracked changes, local commits, a detached HEAD, no `origin`, or no network. There is no HTML/web shortcut because it cannot start the server.
 
-In the server build, **Settings → Software updates → Pull latest version** runs the same safe Git check and shows the result. Close and relaunch the app if files changed. The browser-only build updates through its launcher instead.
+In the server build, **Settings → Software updates → Pull latest version** runs the same update check and shows the result. Git clones pull from `origin`; folders installed from a ZIP download the published source archive from this project's GitHub repository instead. Both paths replace only application source files: `data/`, `.env*`, keys, dependencies, and build output are left untouched. When files change, the page reloads automatically. If dependencies changed, close and relaunch the launcher. The browser-only build updates through its launcher instead.
 
 For a production run:
 
@@ -81,8 +81,8 @@ Installers: `Job-Search-Suite-Setup-<version>.exe` (Windows), `.dmg` (macOS), an
 - **`'node' is not recognized`:** the Windows launcher now searches the usual Node.js install folders before failing. If it still cannot find Node.js, install the LTS version from https://nodejs.org/, then sign out or restart the computer so Windows refreshes `PATH`.
 - **`npm` is not recognized:** Node.js is either not installed or not on PATH. Install Node.js 18 or newer from https://nodejs.org/ and reopen the terminal.
 - **The launcher window closes immediately:** run it from an already-open Command Prompt so the error stays visible, or use `Launch Job Search Suite.cmd check` to print diagnostics.
-- **The launcher says "Auto-update: skipped":** expected when you have uncommitted tracked changes, local commits, a detached HEAD, no `origin`, or no network. The launcher intentionally keeps your local files and still starts the app; commit or stash your work and relaunch to receive updates.
-- **The HTML launcher shows "server is not running":** run `npm install` then `npm run dev` in the project folder, then reopen the launcher.
+- **The launcher says "Auto-update: skipped":** expected in a Git clone when you have uncommitted tracked changes, local commits, a detached HEAD, no `origin`, or no network. The launcher intentionally keeps your local files and still starts the app; commit or stash your work and relaunch to receive updates. A folder installed from a ZIP has no Git history and uses the published source archive instead; if the download fails, the local copy is kept.
+- **The update button says the folder is not a repository:** older launchers could only update Git clones. Relaunch once from an updated build, or replace the ZIP install with a Git clone; your `data/` folder can be copied over.
 - **Browser shows `ERR_CONNECTION_REFUSED`:** open the exact URL printed by the launcher. Port 3000 may be taken by another program, in which case the app uses 3001–3010.
 - **`Cannot find module './611.js'` or another stale chunk error:** a dev server is still running while `.next` was rebuilt. Run `Launch Job Search Suite.cmd reset`. On macOS/Linux, stop the server, delete `.next`, and run `npm run dev` again.
 - **Stale chunks after `npm run build`:** stop the dev server before building. Do not run `npm run build` and `npm run dev` in the same folder at the same time; both write to `.next`.

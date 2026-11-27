@@ -29,7 +29,7 @@ type Props = {
   onExportBackup?: () => Promise<void>;
   onImportBackup?: (json: string) => Promise<void>;
   onClearLocalData?: () => Promise<void>;
-  onUpdate?: () => Promise<{ output: string }>;
+  onUpdate?: () => Promise<{ output: string; changed: boolean }>;
 };
 
 const WEIGHT_LABELS: { key: string; label: string; description: string }[] = [
@@ -242,7 +242,7 @@ export default function SettingsPanel({ settings, busy, onSave, staticMode = fal
         <Card className="mt-6 p-6">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-white"><RefreshCw className="h-4 w-4 text-accent-400" /> Software updates</h2>
           <p className="muted mt-1.5 text-xs">
-            Pull the latest version from this project's Git remote. Updates are fast-forward only and are skipped when you have uncommitted changes or local commits.
+            Pull the latest version from this project's Git remote, or from the published source when this folder was installed from a ZIP. Git updates are fast-forward only and are skipped when you have uncommitted changes or local commits. Private data and local settings are never sent or replaced.
           </p>
           <div className="mt-5">
             <button
@@ -254,6 +254,7 @@ export default function SettingsPanel({ settings, busy, onSave, staticMode = fal
                 try {
                   const result = await onUpdate();
                   setUpdateMessage(result.output || "Update check finished.");
+                  if (result.changed) window.setTimeout(() => window.location.reload(), 1200);
                 } catch (error) {
                   setUpdateMessage(error instanceof Error ? error.message : "Could not check for updates.");
                 } finally {
@@ -266,7 +267,7 @@ export default function SettingsPanel({ settings, busy, onSave, staticMode = fal
             </button>
           </div>
           {updateMessage && <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-ink-950/60 p-3 text-[11px] text-slate-400">{updateMessage}</pre>}
-          <p className="mt-3 text-[11px] text-slate-500">If files changed, close and relaunch the app to use the new version.</p>
+          <p className="mt-3 text-[11px] text-slate-500">When files change, the page reloads automatically. If dependencies changed, close and relaunch the launcher to finish applying them.</p>
         </Card>
       )}
 

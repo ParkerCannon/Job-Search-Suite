@@ -12,6 +12,7 @@ dist-electron/
 # Local-first data (private resumes, jobs, and settings)
 data/
 *.db*
+.install-state.json
 *.sqlite*
 
 # Environment and secrets

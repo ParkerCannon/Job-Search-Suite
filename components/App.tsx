@@ -265,13 +265,13 @@ export default function App({ store = serverStore }: { store?: AppStore }) {
     }
   }
 
-  async function requestUpdate(): Promise<{ output: string }> {
+  async function requestUpdate(): Promise<{ output: string; changed: boolean }> {
     const response = await fetch("/api/update", { method: "POST" });
     const data = await response.json();
     if (!response.ok || !data.ok) {
       throw new Error(data.error || "Could not check for updates.");
     }
-    return { output: String(data.output ?? "") };
+    return { output: String(data.output ?? ""), changed: Boolean(data.changed) };
   }
 
   const profileReady = Boolean(profiles.active?.profile?.name || profiles.active?.profile?.experience?.length);

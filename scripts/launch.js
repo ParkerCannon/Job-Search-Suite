@@ -4,6 +4,7 @@
 const fs = require("node:fs");
 const http = require("node:http");
 const net = require("node:net");
+const os = require("node:os");
 const path = require("node:path");
 const { execFileSync, spawn, spawnSync } = require("node:child_process");
 
@@ -15,6 +16,8 @@ const portStart = 3000;
 const portEnd = 3010;
 const gitCmd = "git";
 const updateTimeoutMs = 20000;
+const updateArchiveUrl = "https://codeload.github.com/ParkerCannon/Job-Search-Suite/tar.gz/refs/heads/main";
+const updateStateFile = ".install-state.json";
 const dependencyFiles = new Set(["package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"]);
 
 process.chdir(projectRoot);
@@ -100,39 +103,199 @@ function shortCommit(hash) {
   return hash ? hash.slice(0, 7) : "unknown";
 }
 
-function updateFromGit() {
-  console.log("Checking for Git updates...");
+function isProtectedUpdatePath(relativePath) {
+  const normalized = relativePath.replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase();
+  if (normalized === updateStateFile) return true;
+  return (
+    normalized.startsWith("data/") ||
+    normalized.startsWith("node_modules/") ||
+    normalized.startsWith(".next/") ||
+    normalized.startsWith(".git/") ||
+    normalized.startsWith("dist/") ||
+    normalized.startsWith("dist-portable/") ||
+    normalized.startsWith("dist-electron/") ||
+    normalized.startsWith("out/") ||
+    normalized.startsWith("build/") ||
+    normalized.startsWith("logs/") ||
+    normalized.startsWith("coverage/") ||
+    normalized.startsWith(".env") ||
+    normalized.endsWith(".db") ||
+    normalized.includes(".db-") ||
+    /\.(pem|key|p12|pfx|log|sqlite|tsbuildinfo)$/.test(normalized) ||
+    normalized === ".ds_store" ||
+    normalized === "thumbs.db"
+  );
+}
 
-  if (
-    !commandSucceeded(gitCmd, ["--version"]) ||
-    !commandSucceeded(gitCmd, ["rev-parse", "--is-inside-work-tree"])
-  ) {
-    console.log("Auto-update: skipped because Git is unavailable or this folder is not a repository.");
-    return { dependenciesChanged: false };
+function readUpdateState() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(projectRoot, updateStateFile), "utf8"));
+    return { hasState: true, files: Array.isArray(parsed.files) ? parsed.files : [] };
+  } catch {
+    return { hasState: false, files: [] };
   }
+}
+
+function writeUpdateState(files) {
+  fs.writeFileSync(
+    path.join(projectRoot, updateStateFile),
+    `${JSON.stringify({ files, updatedAt: new Date().toISOString() }, null, 2)}\n`,
+  );
+}
+
+function listSourceFiles(root, base = "") {
+  const files = [];
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (entry.name === ".git") continue;
+    const relative = base ? `${base}/${entry.name}` : entry.name;
+    const full = path.join(root, entry.name);
+    if (entry.isDirectory()) files.push(...listSourceFiles(full, relative));
+    else if (entry.isFile()) files.push(relative);
+  }
+  return files;
+}
+
+function findSourceRoot(directory) {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+    const candidate = path.join(directory, entry.name);
+    if (fs.existsSync(path.join(candidate, "package.json"))) return candidate;
+  }
+  return null;
+}
+
+function sameFileContents(left, right) {
+  try {
+    if (fs.statSync(left).size !== fs.statSync(right).size) return false;
+    return fs.readFileSync(left).equals(fs.readFileSync(right));
+  } catch {
+    return false;
+  }
+}
+
+async function updateFromArchive() {
+  console.log("Git checkout is unavailable; checking the published source archive...");
+  let tempDir = "";
+  try {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "jss-update-"));
+    const archivePath = path.join(tempDir, "source.tar.gz");
+    const response = await fetch(updateArchiveUrl, {
+      redirect: "follow",
+      signal: AbortSignal.timeout(updateTimeoutMs * 3),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    fs.writeFileSync(archivePath, Buffer.from(await response.arrayBuffer()));
+
+    const extract = spawnSync("tar", ["-xzf", archivePath, "-C", tempDir], {
+      cwd: tempDir,
+      shell: isWindows,
+      stdio: "ignore",
+      windowsHide: true,
+      timeout: updateTimeoutMs * 3,
+    });
+    if (extract.status !== 0) throw new Error("the archive could not be extracted");
+
+    const sourceRoot = findSourceRoot(tempDir);
+    if (!sourceRoot) throw new Error("the archive did not contain the project source");
+
+    const state = readUpdateState();
+    const installedFiles = new Set();
+    let changedCount = 0;
+    let dependenciesChanged = false;
+
+    for (const relative of listSourceFiles(sourceRoot)) {
+      if (isProtectedUpdatePath(relative)) continue;
+      installedFiles.add(relative);
+      const source = path.join(sourceRoot, ...relative.split("/"));
+      const destination = path.join(projectRoot, ...relative.split("/"));
+      if (dependencyFiles.has(path.basename(relative)) && !sameFileContents(source, destination)) {
+        dependenciesChanged = true;
+      }
+      if (sameFileContents(source, destination)) continue;
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      fs.copyFileSync(source, destination);
+      changedCount += 1;
+    }
+
+    if (state.hasState) {
+      for (const relative of state.files) {
+        if (installedFiles.has(relative) || isProtectedUpdatePath(relative)) continue;
+        try {
+          const stale = path.join(projectRoot, ...relative.split("/"));
+          if (fs.statSync(stale).isFile()) {
+            fs.unlinkSync(stale);
+            changedCount += 1;
+          }
+        } catch {
+          // already gone
+        }
+      }
+    }
+
+    writeUpdateState([...installedFiles].sort());
+
+    if (changedCount > 0) console.log(`Auto-update: applied ${changedCount} changed file(s) from the published source.`);
+    else console.log("Auto-update: already up to date with the published source.");
+
+    if (dependenciesChanged) {
+      console.log("Auto-update: dependency files changed; refreshing npm packages...");
+      const install = spawnSync(npmCmd, ["install"], {
+        cwd: projectRoot,
+        shell: isWindows,
+        stdio: "inherit",
+        windowsHide: true,
+      });
+      if (install.status !== 0) {
+        console.log("Auto-update: npm install failed; restart the launcher to install dependencies.");
+      }
+    }
+
+    return { dependenciesChanged, changed: changedCount > 0 };
+  } catch (error) {
+    console.log(
+      `Auto-update: could not check the published source (${error instanceof Error ? error.message : String(error)}); continuing with the local copy.`,
+    );
+    return { dependenciesChanged: false, changed: false };
+  } finally {
+    if (tempDir) {
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      } catch {
+        // already gone
+      }
+    }
+  }
+}
+
+async function updateFromGit() {
+  console.log("Checking for updates...");
+
+  const gitAvailable = commandSucceeded(gitCmd, ["--version"]);
+  const inRepository = gitAvailable && commandSucceeded(gitCmd, ["rev-parse", "--is-inside-work-tree"]);
+  if (!inRepository) return updateFromArchive();
 
   if (!commandOutput(gitCmd, ["config", "--get", "remote.origin.url"])) {
     console.log("Auto-update: skipped because no origin remote is configured.");
-    return { dependenciesChanged: false };
+    return { dependenciesChanged: false, changed: false };
   }
 
   const dirty = commandOutput(gitCmd, ["status", "--porcelain", "--untracked-files=no"]);
   if (dirty) {
     console.log("Auto-update: skipped because you have uncommitted tracked changes.");
     for (const line of dirty.split(/\r?\n/).slice(0, 5)) console.log(`  ${line}`);
-    return { dependenciesChanged: false };
+    return { dependenciesChanged: false, changed: false };
   }
 
   const branch = commandOutput(gitCmd, ["rev-parse", "--abbrev-ref", "HEAD"]);
   if (!branch || branch === "HEAD") {
     console.log("Auto-update: skipped because HEAD is detached.");
-    return { dependenciesChanged: false };
+    return { dependenciesChanged: false, changed: false };
   }
 
   const oldHead = commandOutput(gitCmd, ["rev-parse", "HEAD"]);
   if (!oldHead) {
     console.log("Auto-update: skipped because the current commit could not be read.");
-    return { dependenciesChanged: false };
+    return { dependenciesChanged: false, changed: false };
   }
 
   const fetch = spawnSync(gitCmd, ["fetch", "--prune", "origin"], {
@@ -144,32 +307,32 @@ function updateFromGit() {
   });
   if (fetch.status !== 0) {
     console.log(`Auto-update: could not reach origin (${branch}); continuing with the local copy.`);
-    return { dependenciesChanged: false };
+    return { dependenciesChanged: false, changed: false };
   }
 
   const remoteHead = commandOutput(gitCmd, ["rev-parse", `origin/${branch}`]);
   if (!remoteHead) {
     console.log(`Auto-update: origin/${branch} is not available; continuing with the local copy.`);
-    return { dependenciesChanged: false };
+    return { dependenciesChanged: false, changed: false };
   }
   if (remoteHead === oldHead) {
     console.log(`Auto-update: already up to date (${shortCommit(oldHead)}).`);
-    return { dependenciesChanged: false };
+    return { dependenciesChanged: false, changed: false };
   }
 
   const counts = commandOutput(gitCmd, ["rev-list", "--left-right", "--count", `HEAD...origin/${branch}`]);
   const [ahead, behind] = counts.split(/\s+/).map(Number);
   if (!Number.isFinite(ahead) || !Number.isFinite(behind)) {
     console.log("Auto-update: could not compare branches; continuing with the local copy.");
-    return { dependenciesChanged: false };
+    return { dependenciesChanged: false, changed: false };
   }
   if (ahead > 0) {
     console.log(`Auto-update: skipped because this branch has ${ahead} local commit(s) not on origin.`);
-    return { dependenciesChanged: false };
+    return { dependenciesChanged: false, changed: false };
   }
   if (behind === 0) {
     console.log("Auto-update: skipped because origin changed but cannot be fast-forwarded.");
-    return { dependenciesChanged: false };
+    return { dependenciesChanged: false, changed: false };
   }
 
   const pull = spawnSync(gitCmd, ["pull", "--ff-only", "origin", branch], {
@@ -181,13 +344,13 @@ function updateFromGit() {
   });
   if (pull.status !== 0) {
     console.log("Auto-update: pull failed; continuing with the local copy.");
-    return { dependenciesChanged: false };
+    return { dependenciesChanged: false, changed: false };
   }
 
   const newHead = commandOutput(gitCmd, ["rev-parse", "HEAD"]);
   if (!newHead || newHead === oldHead) {
     console.log("Auto-update: pull finished with no commit change.");
-    return { dependenciesChanged: false };
+    return { dependenciesChanged: false, changed: false };
   }
   console.log(`Auto-update: updated ${shortCommit(oldHead)} -> ${shortCommit(newHead)}.`);
 
@@ -200,7 +363,7 @@ function updateFromGit() {
   );
   if (dependenciesChanged) console.log("Auto-update: dependency files changed; npm will be refreshed.");
 
-  return { dependenciesChanged };
+  return { dependenciesChanged, changed: true };
 }
 
 function responds(port, timeoutMs = 1200) {
@@ -397,10 +560,13 @@ async function runLaunch(serverMode = "dev") {
 async function main() {
   printHeader();
 
-  const update = mode === "launch" || mode === "update" ? updateFromGit() : { dependenciesChanged: false };
+  const update = mode === "launch" || mode === "update"
+    ? await updateFromGit()
+    : { dependenciesChanged: false, changed: false };
 
   if (mode === "update") {
-    if (update.dependenciesChanged) console.log("Dependencies changed; restart the launcher to install them.");
+    console.log(`UPDATE_FILES_CHANGED=${update.changed ? 1 : 0}`);
+    if (update.dependenciesChanged) console.log("Dependencies changed; restart the launcher to finish applying them.");
     console.log("Update check complete. Restart the launcher if files changed.");
     return;
   }
