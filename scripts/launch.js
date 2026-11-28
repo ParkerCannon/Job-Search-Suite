@@ -14,6 +14,7 @@ const npmCmd = isWindows ? "npm.cmd" : "npm";
 const minNodeMajor = 18;
 const portStart = 3000;
 const portEnd = 3010;
+const bindHost = "127.0.0.1";
 const gitCmd = "git";
 const updateTimeoutMs = 20000;
 const updateRepository = "https://github.com/ParkerCannon/Job-Search-Suite.git";
@@ -24,7 +25,41 @@ const dependencyFiles = new Set(["package.json", "package-lock.json", "yarn.lock
 
 process.chdir(projectRoot);
 
-const mode = String(process.argv[2] || "launch").toLowerCase();
+const argv = process.argv.slice(2);
+const consumedArgs = new Set();
+let requestedPort = null;
+let portError = "";
+
+function parsePort(value) {
+  if (!/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 && parsed <= 65535 ? parsed : null;
+}
+
+function setPort(raw) {
+  const parsed = raw === undefined ? null : parsePort(raw);
+  if (parsed === null) {
+    portError = `Invalid port "${raw ?? ""}". Use 0 for an OS-assigned port or a number from 1 to 65535.`;
+    return;
+  }
+  requestedPort = parsed;
+}
+
+for (let i = 0; i < argv.length; i += 1) {
+  const value = argv[i];
+  if (value === "--port" || value === "-p") {
+    consumedArgs.add(i);
+    consumedArgs.add(i + 1);
+    setPort(argv[i + 1]);
+  } else if (value.startsWith("--port=")) {
+    consumedArgs.add(i);
+    setPort(value.slice(7));
+  }
+}
+if (requestedPort === null && !portError && process.env.PORT) setPort(process.env.PORT);
+
+const modeIndex = argv.findIndex((value, index) => !consumedArgs.has(index) && !value.startsWith("-"));
+const mode = String(modeIndex >= 0 ? argv[modeIndex] : "launch").toLowerCase();
 
 function fail(message) {
   console.error("");
@@ -424,7 +459,7 @@ async function updateFromGit() {
 function responds(port, timeoutMs = 1200) {
   return new Promise((resolve) => {
     const request = http.get(
-      { host: "127.0.0.1", port, path: "/", timeout: timeoutMs },
+      { host: bindHost, port, path: "/", timeout: timeoutMs },
       (response) => {
         response.resume();
         resolve(response.statusCode !== undefined && response.statusCode < 500);
@@ -445,7 +480,7 @@ async function portHasListener(port) {
     const server = net.createServer();
     server.once("error", () => resolve(true));
     server.once("listening", () => server.close(() => resolve(false)));
-    server.listen({ port, host: "127.0.0.1", exclusive: true });
+    server.listen({ port, host: bindHost, exclusive: true });
   });
 }
 
@@ -478,6 +513,25 @@ function pidsListeningOn(port) {
   return [...pids];
 }
 
+function allListeningPids() {
+  const pids = new Set();
+  if (isWindows) {
+    const output = commandOutput("netstat", ["-ano"]);
+    const pattern = /:\d+\s+.*?LISTENING\s+(\d+)/;
+    for (const line of output.split(/\r?\n/)) {
+      const match = line.match(pattern);
+      if (match) pids.add(Number(match[1]));
+    }
+  } else {
+    const output = commandOutput("lsof", ["-nP", "-iTCP", "-sTCP:LISTEN", "-Fp"]);
+    for (const line of output.split(/\r?\n/)) {
+      const match = line.match(/^p(\d+)$/);
+      if (match) pids.add(Number(match[1]));
+    }
+  }
+  return [...pids];
+}
+
 function isProjectProcess(pid) {
   let commandLine = "";
   if (isWindows) {
@@ -494,18 +548,21 @@ function isProjectProcess(pid) {
     }
   }
   const normalized = commandLine.toLowerCase();
+  const projectMarker = normalized.includes(projectRoot.toLowerCase());
   return (
-    normalized.includes("next dev") ||
-    (normalized.includes("npm-cli.js") && normalized.includes("run dev")) ||
-    normalized.includes(path.basename(projectRoot).toLowerCase()) ||
-    normalized.includes(projectRoot.toLowerCase())
+    projectMarker &&
+    (normalized.includes("next") ||
+      normalized.includes("launch.js") ||
+      normalized.includes("npm-cli.js"))
   );
 }
 
-function stopProjectServersOn(port) {
-  const pids = pidsListeningOn(port).filter(isProjectProcess);
+function stopProjectServersOn(port = null) {
+  const listeners = port === null ? allListeningPids() : pidsListeningOn(port);
+  const pids = listeners.filter(isProjectProcess);
+  const where = port === null ? "" : ` on port ${port}`;
   for (const pid of pids) {
-    console.log(`Stopping this project's server on port ${port} (PID ${pid})...`);
+    console.log(`Stopping this project's server${where} (PID ${pid})...`);
     if (isWindows) {
       commandOutput("taskkill", ["/PID", String(pid), "/F", "/T"]);
     } else {
@@ -516,7 +573,7 @@ function stopProjectServersOn(port) {
       }
     }
   }
-  if (!pids.length) console.log(`No Job Search Suite server found on port ${port}.`);
+  if (!pids.length) console.log(`No Job Search Suite server found${where}.`);
   return pids.length;
 }
 
@@ -552,54 +609,149 @@ async function waitForHttp(port, timeoutMs = 90000) {
   return false;
 }
 
-async function runCheck() {
-  console.log("Port status:");
-  for (let port = portStart; port <= portEnd; port += 1) {
-    const used = await portHasListener(port);
-    const appResponds = used ? await responds(port) : false;
-    console.log(`  ${port}: ${used ? (appResponds ? "Job Search Suite responding" : "in use by another process") : "free"}`);
+async function runCheck(portOption = null) {
+  console.log(`Local binding: ${bindHost} only.`);
+  if (portOption === 0) {
+    console.log("Port 0 requests an OS-assigned ephemeral port; the launcher will print the selected URL.");
+  } else if (portOption !== null) {
+    const used = await portHasListener(portOption);
+    const projectPids = used ? pidsListeningOn(portOption).filter(isProjectProcess) : [];
+    const appResponds = used ? await responds(portOption) : false;
+    const status = used
+      ? appResponds && projectPids.length > 0
+        ? "Job Search Suite responding"
+        : "in use by another process"
+      : "free";
+    console.log("Port status:");
+    console.log(`  ${portOption}: ${status}`);
+  } else {
+    console.log(`Port status (default range ${portStart}-${portEnd}):`);
+    for (let port = portStart; port <= portEnd; port += 1) {
+      const used = await portHasListener(port);
+      const projectPids = used ? pidsListeningOn(port).filter(isProjectProcess) : [];
+      const appResponds = used ? await responds(port) : false;
+      const status = used
+        ? appResponds && projectPids.length > 0
+          ? "Job Search Suite responding"
+          : "in use by another process"
+        : "free";
+      console.log(`  ${port}: ${status}`);
+    }
   }
   console.log("");
   console.log("Environment check passed.");
 }
 
-async function runLaunch(serverMode = "dev") {
-  if (await responds(portStart)) {
-    const url = `http://localhost:${portStart}`;
-    console.log(`Job Search Suite is already running at ${url}`);
-    openBrowser(url);
-    return;
-  }
+async function runLaunch(serverMode = "dev", portOption = null) {
+  const explicitPort = portOption !== null;
+  const ephemeral = portOption === 0;
+  let port = null;
+  let url = "";
 
-  let port = portStart;
-  if (await portHasListener(portStart)) {
-    console.log(`Port ${portStart} is in use by another process. Looking for the next available port...`);
-    const fallback = await findFreePort();
-    if (!fallback) {
-      fail(`No free port was found between ${portStart} and ${portEnd}. Close a program or extend the range in scripts/launch.js.`);
+  if (explicitPort && !ephemeral) {
+    const listeners = pidsListeningOn(portOption);
+    const appResponds = await responds(portOption);
+    if (listeners.length > 0) {
+      if (appResponds && listeners.some(isProjectProcess)) {
+        url = `http://${bindHost}:${portOption}`;
+        console.log(`Job Search Suite is already running at ${url}`);
+        openBrowser(url);
+        return;
+      }
+      fail(`Port ${portOption} is already in use. Choose a different port with --port <n>.`);
       return;
     }
-    port = fallback;
+    port = portOption;
+  } else if (!explicitPort) {
+    const defaultListeners = pidsListeningOn(portStart).filter(isProjectProcess);
+    if (defaultListeners.length > 0 && (await responds(portStart))) {
+      url = `http://${bindHost}:${portStart}`;
+      console.log(`Job Search Suite is already running at ${url}`);
+      openBrowser(url);
+      return;
+    }
+
+    if (await portHasListener(portStart)) {
+      console.log(`Port ${portStart} is in use by another process. Looking for the next available port...`);
+      const fallback = await findFreePort();
+      if (!fallback) {
+        fail(`No free port was found between ${portStart} and ${portEnd}. Choose one with --port <n>.`);
+        return;
+      }
+      port = fallback;
+    } else {
+      port = portStart;
+    }
   }
 
   if (serverMode === "dev") clearStaleBuild();
 
-  const url = `http://localhost:${port}`;
-  console.log(`Starting the local server at ${url}`);
+  if (ephemeral) {
+    console.log("Starting the local server on an OS-assigned port; the actual URL will be printed below.");
+  } else {
+    url = `http://${bindHost}:${port}`;
+    console.log(`Starting the local server at ${url}`);
+  }
   console.log("Keep this window open while you use the app.");
 
-  const scriptName = serverMode === "start" ? "start:direct" : "dev:direct";
-  const child = spawn(npmCmd, ["run", scriptName, "--", "--port", String(port)], {
-    cwd: projectRoot,
-    shell: isWindows,
-    stdio: "inherit",
-  });
+  const launchPort = ephemeral ? 0 : port;
+  const nextBin = path.join(projectRoot, "node_modules", "next", "dist", "bin", "next");
+  let discoveredPort = null;
+  const child = spawn(
+    process.execPath,
+    [
+      "--no-warnings",
+      nextBin,
+      serverMode === "start" ? "start" : "dev",
+      "--port",
+      String(launchPort),
+      "--hostname",
+      bindHost,
+    ],
+    {
+      cwd: projectRoot,
+      stdio: ephemeral ? ["inherit", "pipe", "pipe"] : "inherit",
+      windowsHide: false,
+    },
+  );
+
+  if (ephemeral) {
+    let tail = "";
+    const forward = (source, destination) => {
+      source.setEncoding("utf8");
+      source.on("data", (chunk) => {
+        destination.write(chunk);
+        tail = `${tail}${chunk}`.slice(-4096);
+        const clean = tail.replace(/\u001B\[[0-9;]*m/g, "");
+        const match = clean.match(/(?:Local|Network):\s*https?:\/\/[^\s:]+:(\d+)/i);
+        if (match && !discoveredPort) discoveredPort = Number(match[1]);
+      });
+    };
+    forward(child.stdout, process.stdout);
+    forward(child.stderr, process.stderr);
+  }
 
   const shutdown = () => {
     if (!child.killed) child.kill("SIGTERM");
   };
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
+  child.once("exit", (code) => process.exit(code ?? 0));
+
+  if (ephemeral) {
+    const deadline = Date.now() + 90000;
+    while (!discoveredPort && child.exitCode === null && child.signalCode === null && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    if (!discoveredPort) {
+      fail("Could not determine the OS-assigned port from the server output.");
+      if (!child.killed) child.kill("SIGTERM");
+      return;
+    }
+    port = discoveredPort;
+    url = `http://${bindHost}:${port}`;
+    console.log(`Local server selected ${url}`);
+  }
 
   const ready = await waitForHttp(port);
   if (ready) {
@@ -608,12 +760,15 @@ async function runLaunch(serverMode = "dev") {
     console.log("");
     console.log(`The server did not respond in time. Check the output above, or try ${url} manually.`);
   }
-
-  child.on("exit", (code) => process.exit(code ?? 0));
 }
 
 async function main() {
   printHeader();
+
+  if (portError) {
+    fail(portError);
+    return;
+  }
 
   const update = mode === "launch" || mode === "update"
     ? await updateFromGit()
@@ -632,18 +787,16 @@ async function main() {
   if (!ensureEnvironment(update.dependenciesChanged)) return;
 
   if (mode === "check") {
-    await runCheck();
+    await runCheck(requestedPort);
     return;
   }
 
   if (mode === "reset") {
-    for (let port = portStart; port <= portEnd; port += 1) {
-      stopProjectServersOn(port);
-    }
+    stopProjectServersOn(requestedPort === null || requestedPort === 0 ? null : requestedPort);
     clearStaleBuild();
   }
 
-  await runLaunch(mode === "start" ? "start" : "dev");
+  await runLaunch(mode === "start" ? "start" : "dev", requestedPort);
 }
 
 main().catch((error) => {

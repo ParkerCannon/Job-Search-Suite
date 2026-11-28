@@ -23,17 +23,17 @@ npm install
 npm run dev
 ```
 
-Then open the URL printed in the terminal, usually http://localhost:3000. If that port is busy, the launcher tries 3001 through 3010 and prints the URL it selected. The first run creates `data/job-search-suite.db` locally.
+Then open the URL printed in the terminal, usually http://127.0.0.1:3000. If that port is busy, the launcher tries 3001 through 3010 and prints the URL it selected. The server binds only to `127.0.0.1`, so it is not reachable from other devices. The first run creates `data/job-search-suite.db` locally.
 
 ### Desktop shortcuts
 
-Use the launcher for your shell. Each one starts the local server, finds the next free port in 3000–3010, waits until it responds, and opens the actual URL. Keep the terminal window open while you use the app.
+Use the launcher for your shell. Each one starts the local server, finds the next free port in 3000–3010 unless you specify one, waits until it responds, and opens the actual URL. Keep the terminal window open while you use the app.
 
 - **Windows:** `Launch Job Search Suite.cmd` — double-click it, or right-click → *Send to* → *Desktop (create shortcut)*. It also locates Node.js when `PATH` is stale.
 - **macOS:** `Launch Job Search Suite.command` — copy it to the Desktop or make an alias, then run it. Right-click → *Open* the first time if Gatekeeper asks.
 - **Linux:** `Launch Job Search Suite.sh` — copy it to the Desktop, mark it executable with `chmod +x`, then double-click or run it from a terminal. A `.desktop` entry can point to this script.
 
-All three accept `check`, `reset`, and `update` arguments. In a Git clone they pull only with `--ff-only` and still start your local copy if you have uncommitted tracked changes, local commits, a detached HEAD, no `origin`, or no network. There is no HTML/web shortcut because it cannot start the server.
+All three accept `check`, `reset`, and `update` arguments. Add `--port <n>`, `-p <n>`, or `--port=<n>` (or set `PORT=<n>`) to host on a specific port from 1–65535; use `--port 0` for an OS-assigned ephemeral port. The launcher prints the exact URL it opens and binds only to `127.0.0.1` because the app has no authentication. An explicit port that is already busy is reported instead of silently moving elsewhere. `reset` stops only this project's listening processes, including ones on arbitrary ports. In a Git clone the update check pulls only with `--ff-only` and still starts your local copy if you have uncommitted tracked changes, local commits, a detached HEAD, no `origin`, or no network. There is no HTML/web shortcut because it cannot start the server.
 
 In the server build, **Settings → Software updates → Pull latest version** runs the same update check and shows the result. Git clones pull from `origin`; folders installed from a ZIP download the published source archive from this project's GitHub repository instead. Both paths replace only application source files: `data/`, `.env*`, keys, and build output are left untouched. Every check also runs `npm install` so dependencies match `package.json` and `package-lock.json` on that device, whether or not source files changed; a failed install is reported as an error. When files change, the page reloads automatically. Restart the launcher only if a dependency was replaced. The browser-only build updates through its launcher instead.
 
@@ -44,7 +44,7 @@ npm run build
 npm start
 ```
 
-Both `npm run dev` and `npm start` go through the launcher, so they use the same 3000–3010 port fallback. Use `npm run dev:direct` or `npm run start:direct` only when you intentionally want to bypass the launcher.
+Both `npm run dev` and `npm start` go through the launcher, so they use the same 3000–3010 port fallback unless you pass a port: `npm run dev -- --port 8123`, `npm start -- --port 0`, or `PORT=8123 npm run dev`. Use `npm run dev:direct` or `npm run start:direct` only when you intentionally want to bypass the launcher; add `--hostname 127.0.0.1` yourself, because those scripts lose the launcher's port checks, localhost binding, and URL reporting.
 
 ## Run without Node
 
@@ -83,7 +83,7 @@ Installers: `Job-Search-Suite-Setup-<version>.exe` (Windows), `.dmg` (macOS), an
 - **The launcher window closes immediately:** run it from an already-open Command Prompt so the error stays visible, or use `Launch Job Search Suite.cmd check` to print diagnostics.
 - **The launcher says "Auto-update: skipped":** expected in a Git clone when you have uncommitted tracked changes, local commits, a detached HEAD, no `origin`, or no network. The launcher intentionally keeps your local files and still starts the app; commit or stash your work and relaunch to receive updates. A folder installed from a ZIP has no Git history and uses the published source archive instead; if the download fails, the local copy is kept.
 - **The update button says the folder is not a repository:** older launchers could only update Git clones. Relaunch once from an updated build, or replace the ZIP install with a Git clone; your `data/` folder can be copied over.
-- **Browser shows `ERR_CONNECTION_REFUSED`:** open the exact URL printed by the launcher. Port 3000 may be taken by another program, in which case the app uses 3001–3010.
+- **Browser shows `ERR_CONNECTION_REFUSED`:** open the exact URL printed by the launcher, which uses `127.0.0.1`. Port 3000 may be taken by another program, in which case the app uses 3001–3010. Force a port with `--port <n>` or request an OS-assigned one with `--port 0`.
 - **`Cannot find module './611.js'` or another stale chunk error:** a dev server is still running while `.next` was rebuilt. Run `Launch Job Search Suite.cmd reset`. On macOS/Linux, stop the server, delete `.next`, and run `npm run dev` again.
 - **Stale chunks after `npm run build`:** stop the dev server before building. Do not run `npm run build` and `npm run dev` in the same folder at the same time; both write to `.next`.
 - **The workspace is empty after cloning:** expected. `data/` is git-ignored to keep resumes, jobs, and API keys private, so each clone starts fresh.
